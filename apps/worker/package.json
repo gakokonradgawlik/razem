@@ -1,0 +1,13 @@
+{
+  "name": "@razem/worker",
+  "dependencies": {
+    "@razem/contracts": "0.1.0",
+    "@razem/db": "0.1.0"
+  },
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  }
+}

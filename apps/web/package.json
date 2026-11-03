@@ -1,0 +1,20 @@
+{
+  "name": "@razem/web",
+  "dependencies": {
+    "@razem/contracts": "0.1.0",
+    "dexie": "4.4.7",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.5",
+    "@vitejs/plugin-react": "6.2.1"
+  },
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vite build"
+  }
+}
