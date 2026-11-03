@@ -72,6 +72,54 @@ const login = (app: App, user: string, password: string, ip = '203.0.113.1') =>
 const get = (app: App, url: string, cookie?: string) => app.inject({ method: 'GET', url, headers: cookie ? { cookie } : {} });
 
 describe('bootstrap i reset CLI', () => {
+  it.each([
+    ['emoji', '😀😁😂😃'.repeat(64), '😄😅😆😉'.repeat(64)],
+    ['NFD', 'a\u0301e\u0301i\u0301o\u0301'.repeat(64), 'u\u0301y\u0301c\u0301n\u0301'.repeat(64)],
+  ])('CLI i HTTP: granica Unicode %s, bootstrap/reset → login → zmiana', async (_label, temporary, own) => {
+    const lines = [...bootstrapLines];
+    lines[4] = temporary;
+    const boot = await admin(['bootstrap'], lines);
+    expect(boot.code).toBe(0);
+    expect(boot.text).not.toContain(temporary);
+    const { app } = await server();
+    for (const phase of ['bootstrap', 'reset']) {
+      if (phase === 'reset') {
+        const reset = await admin(['reset-password', 'a@example.test'], [temporary]);
+        expect(reset.code).toBe(0);
+        expect(reset.text).not.toContain(temporary);
+      }
+      const signed = await login(app, 'a@example.test', temporary.normalize('NFC'));
+      expect(signed.statusCode).toBe(200);
+      const cookie = sessionCookie(signed)!;
+      expect((await get(app, '/api/me', cookie)).json().user.mustChangePassword).toBe(true);
+      expect((await get(app, '/api/sync/pull', cookie)).statusCode).toBe(403);
+      const changed = await app.inject({ method: 'POST', url: '/api/auth/password',
+        headers: { ...json, cookie }, payload: { currentPassword: temporary, newPassword: own } });
+      expect(changed.statusCode).toBe(200);
+      expect((await get(app, '/api/me', sessionCookie(changed)!)).json().user.mustChangePassword).toBe(false);
+      expect((await login(app, 'a@example.test', own.normalize('NFC'))).statusCode).toBe(200);
+    }
+    const over = temporary + 'x'; // 257 code points after NFC
+    expect((await admin(['reset-password', 'a@example.test'], [over])).code).toBe(1);
+    expect((await login(app, 'a@example.test', over)).statusCode).toBe(400);
+    const cookie = sessionCookie(await login(app, 'a@example.test', own))!;
+    for (const payload of [
+      { currentPassword: own, newPassword: over },
+      { currentPassword: over, newPassword: temporary },
+    ]) {
+      expect((await app.inject({ method: 'POST', url: '/api/auth/password',
+        headers: { ...json, cookie }, payload })).statusCode).toBe(400);
+    }
+    expect((await login(app, 'a@example.test', own)).statusCode).toBe(200);
+  });
+
+  it('CLI bootstrap odrzuca 257 punktów kodowych po NFC bez zapisania kont', async () => {
+    const lines = [...bootstrapLines];
+    lines[4] = '😀😁😂😃'.repeat(64) + 'x';
+    expect((await admin(['bootstrap'], lines)).code).toBe(1);
+    expect((await admin(['status'])).text).toContain('konta: 0');
+  });
+
   it('tworzy gospodarstwo i dwa konta bez drukowania haseł; wymusza zmianę; drugi bootstrap odmawia', async () => {
     const result = await admin(['bootstrap'], bootstrapLines);
     expect(result.code).toBe(0);

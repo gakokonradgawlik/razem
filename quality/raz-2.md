@@ -45,3 +45,14 @@ SHA256 zweryfikowany z `SHASUMS256.txt`), dane wyłącznie syntetyczne.
   zalogowany dostaje 404 na `/api/sync/*`.
 - Parametry Argon2id zmierzono na hoście deweloperskim, nie na docelowym Ubuntu.
 - Limity logowania w SQLite: jedna instancja app (zgodnie z architekturą).
+
+## Poprawka Unicode po review (04.11.2026)
+- `packages/contracts/src/auth.ts`: HTTP i CLI liczą punkty kodowe po NFC;
+  HTTP normalizuje oba pola zmiany hasła i hasło logowania. Polityka siły
+  również działa na NFC, tak samo jak Argon2id.
+- `packages/contracts/src/auth.test.ts`: granice 256/257, emoji, NFD,
+  normalizacja oraz słabe hasło złożone z równoważnych reprezentacji Unicode.
+- `apps/server/src/auth.test.ts`: rzeczywisty `runAdmin` bootstrap/reset → HTTP
+  login → wymuszona zmiana hasła → ponowne logowanie; emoji i NFD przy 256
+  punktach kodowych, odmowa przy 257 w CLI i wszystkich polach HTTP,
+  zachowanie dotychczasowego hasła po odmowie, brak haseł w wyjściu CLI.
