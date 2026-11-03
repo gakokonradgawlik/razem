@@ -1,9 +1,10 @@
 # Razem
 
 Prywatny organizer dla dwóch osób. Fundament RAZ-1: npm workspaces, wspólne
-kontrakty i szkielety aplikacji. **To jeszcze nie jest działający organizer.**
-Ekran informacyjny nie zapisuje danych, nie tworzy kont i nie zgłasza synchronizacji.
-Logowanie, serwis sync, edycja offline, Service Worker i przypomnienia mają kolejne zadania.
+kontrakty i szkielety aplikacji. RAZ-2: schemat SQLite i migracje, dwa konta,
+sesje i serwis uprawnień. **To jeszcze nie jest działający organizer.**
+Ekran informacyjny nie zapisuje danych. Ekran logowania, serwis sync, edycja offline,
+Service Worker i przypomnienia mają kolejne zadania.
 
 ## Start
 
@@ -17,12 +18,43 @@ cp .env.example .env
 npm run dev
 ```
 
-Web: http://127.0.0.1:5173, API: http://127.0.0.1:3100. Vite przekazuje `/api`,
+Web: http://127.0.0.1:5173, API: http://127.0.0.1:3100. `.env.example` ustawia
+`COOKIE_SECURE=false` wyłącznie dla lokalnego http; produkcja odrzuca tę wartość. Vite przekazuje `/api`,
 `/healthz`, `/readyz` do API. `Ctrl+C` zatrzymuje web/API/worker.
 SQLite powstaje w `./data/razem.sqlite`; katalog jest ignorowany przez Git.
 Polecenia uruchamiaj z katalogu głównego. Zmiana portu API wymaga też zmiany proxy
 w `apps/web/vite.config.ts`; zajęte porty sprawdź przed startem.
 Zmienna `DATABASE_PATH` może wskazywać osobną bazę testową. Nie używaj NFS/SMB.
+
+## Konta (lokalne CLI administratora)
+
+Nie ma rejestracji, konta demo ani hasła domyślnego. Jedno gospodarstwo i dokładnie
+dwa konta tworzy administrator na serwerze; hasła podaje się przez stdin (ukryte na
+terminalu, potwierdzane), nigdy w argumentach/zmiennych. CLI ich nie wypisuje.
+
+```sh
+npm run build
+npm run admin -- bootstrap               # nazwa domu, strefa, 2× login/nazwa/hasło tymczasowe
+npm run admin -- reset-password <login>  # nowe hasło tymczasowe, odwołuje wszystkie sesje
+npm run admin -- revoke-sessions <login> # wylogowanie na wszystkich urządzeniach
+npm run admin -- status | migrate | measure-argon2
+# bez buildu: npm run admin:dev -- <polecenie>
+# Docker: docker compose -f deploy/compose.yaml run --rm -it app node apps/server/dist/admin.js bootstrap
+```
+
+Pierwsze logowanie hasłem tymczasowym pozwala tylko na `/api/me`, zmianę hasła
+i wylogowanie. Szczegóły sesji, CSRF i limitów: [security/access.md](security/access.md).
+
+## Baza i migracje
+
+`DATABASE_PATH` (domyślnie `./data/razem.sqlite`): katalog tworzony z prawami 0700,
+plik 0600, WAL, `foreign_keys`, `busy_timeout=5000`. Migracje to zamrożony SQL
+w `packages/db/src/migrations.ts`, z sumą kontrolną w `schema_migrations`. Stosuje je
+tylko serwer przy starcie (albo `admin migrate`), każdą w transakcji, z kopią
+`<baza>.pre-migration-v<N>-<czas>.bak` przed aktualizacją istniejących danych.
+Worker nie migruje: czeka do 60 s i kończy się, gdy schemat nie odpowiada wersji.
+Zmieniona/nieznana historia migracji blokuje start. Nie edytuj zastosowanej migracji —
+dodaj nową wersję. Kopie `.bak` zawierają dane wrażliwe; usuwaj je po weryfikacji.
 
 ## Kontrole
 
@@ -58,8 +90,11 @@ NODE_ENV=production npm start
 ```
 
 Fastify obsługuje build web i API pod jednym originem, w tym ścieżki SPA.
-`/healthz` sprawdza proces, `/readyz` również dostęp do SQLite. API danych zwraca
-401 aż do wdrożenia sesji i autoryzowanego serwisu sync; nagłówki i cookies nie nadają uprawnień.
+`/healthz` sprawdza proces, `/readyz` również dostęp do SQLite. Każde `/api` wymaga
+sesji (401); endpointy danych dostarczy serwis sync (RAZ-4) — do tego czasu zalogowany
+dostaje 404. Nagłówki typu `x-user-id` ani deviceId nie nadają uprawnień.
+Za reverse proxy ustaw `RAZEM_PUBLIC_ORIGIN` (dokładny origin HTTPS) i ewentualnie
+`RAZEM_TRUST_PROXY`.
 Worker na razie utrzymuje połączenie i obsługuje zakończenie procesu; niczego nie wysyła.
 
 `deploy/compose.yaml` definiuje app + worker i lokalny wolumen SQLite; host port
@@ -74,14 +109,14 @@ Nie uruchamiaj `down -v` na instalacji z danymi. Nie używamy Vite preview w pro
 | Ścieżka | Odpowiedzialność |
 | --- | --- |
 | `apps/web` | React/Vite, adapter klienta API, szkielet Dexie per konto |
-| `apps/server` | Fastify, publiczne health/readiness, produkcyjne pliki web |
+| `apps/server` | Fastify, health/readiness, sesje/auth, CLI `admin`, pliki web |
 | `apps/worker` | osobny proces przypomnień — na razie lifecycle |
 | `packages/contracts` | Zod i typy TS, daty, prywatność, sync v1 |
-| `packages/db` | Drizzle + SQLite WAL, FK, busy_timeout; bez domenowego schematu |
+| `packages/db` | SQLite WAL, migracje, schemat Drizzle, repozytoria i serwis uprawnień |
 | `tests/e2e` | rzeczywisty HTTP i render buildu w przeglądarkach |
 
 Czytaj [docs/START.md](docs/START.md), [kontrakt v1](architecture/contracts.md),
 [synchronizację](architecture/sync.md), [bezpieczeństwo](security/access.md)
 i [repozytorium/wersje](operations/repository.md). Dokumentacja produktu opisuje
-docelowe MVP; zrealizowany zakres i dowody RAZ-1 są w [quality/raz-1.md](quality/raz-1.md).
+docelowe MVP; zrealizowany zakres i dowody: [quality/raz-1.md](quality/raz-1.md), [quality/raz-2.md](quality/raz-2.md).
 W repo nie ma kont demo, haseł domyślnych, kluczy ani danych domowników.

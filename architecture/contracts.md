@@ -19,7 +19,7 @@ niezmienne od utworzenia, także offline. Udostępnienie notatki to świadoma ko
 Element zakupów, wystąpienie zadania i przypomnienie dziedziczą ACL rodzica;
 ich create nie przyjmuje visibility, update nie zmienia powiązania nadrzędnego.
 Serwer weryfikuje zgodność ich metadanych z rodzicem. Rekord wystąpienia ma
-unikalność `(taskId, occurrenceKey)` do wymuszenia w bazie przez kolejne zadanie.
+unikalność `(taskId, occurrenceKey)` wymuszoną w bazie (RAZ-2).
 `assignee: self/partner/both` interpretuje się względem ownerId, nie aktualnego czytelnika.
 
 `userSchema` to bezpieczna projekcja konta bez hasha hasła. Preferencje i subskrypcje

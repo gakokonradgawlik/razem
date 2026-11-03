@@ -8,6 +8,7 @@ const settings = serverSettings();
 // pre-migration copy); the worker refuses to run on a different schema version.
 const { database, migration } = openMigratedDatabase(settings.databasePath);
 if (migration.applied.length > 0) console.info(`Razem: zastosowano migracje ${migration.applied.join(', ')}`);
+if (settings.production && !settings.publicOrigin) console.warn('Razem: brak PUBLIC_ORIGIN – mutacje przyjmowane tylko z originu równego nagłówkowi Host');
 const webRoot = settings.production ? fileURLToPath(new URL('../../web/dist', import.meta.url)) : undefined;
 const app = await buildApp({
   database, ...(webRoot ? { webRoot } : {}), secureCookies: settings.secureCookies, trustProxy: settings.trustProxy,

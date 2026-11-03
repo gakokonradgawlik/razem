@@ -5,7 +5,9 @@ Jedna prywatna instalacja dla dwóch osób. npm workspaces: apps/web (React, Vit
 Node aktywne LTS i stabilne zgodne zależności wybiera RAZ-1 po sprawdzeniu oficjalnych źródeł; konkretne wersje przypina w plikach i obrazie.
 RAZ-1 przypina Node 26.13.0 / npm 11.20.0; pełna tabela i źródła w operations/repository.md.
 Kontrakt v1 i rozstrzygnięcia payloadów: architecture/contracts.md. SQLite przez
-stabilny adapter Drizzle/better-sqlite3; schemat domenowy i migracje dostarcza RAZ-2.
+stabilny adapter Drizzle/better-sqlite3. RAZ-2: migracje SQL z sumami kontrolnymi
+(`packages/db/src/migrations.ts`), schemat Drizzle, `RecordRepository` z jednym serwisem
+uprawnień `accessPolicy`; konta i sesje w `apps/server/src/auth` (security/access.md).
 Produkcja: web build serwowany przez aplikację, /api pod tym samym originem, worker korzysta z tej samej bazy na pojedynczym hoście. Kontenery app i worker; reverse proxy HTTPS istniejące lub Caddy. Bez uruchamiania dev/Vite preview jako produkcji.
 
 ## Polecenia i repozytorium
