@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { annualDate, canReadRecord, defaultVisibility, localTimeToInstant, monthlyDate,
   mutationSchema, mutationResultSchema, pullResponseSchema, pushRequestSchema,
-  recordSchemaUnion, dateSchema, instantSchema } from './index.js';
+  recordSchemaUnion, dateSchema, instantSchema, userSchema } from './index.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const partner = '22222222-2222-4222-8222-222222222222';
@@ -43,6 +43,12 @@ describe('granice kontraktu mutacji', () => {
 });
 
 describe('prywatność i odpowiedzi sync', () => {
+  it('projekcja konta odrzuca dane uwierzytelnienia', () => {
+    const user = { id, householdId: id, login: 'synthetic-user', displayName: 'Test', mustChangePassword: true, createdAt: now };
+    expect(userSchema.safeParse(user).success).toBe(true);
+    expect(userSchema.safeParse({ ...user, passwordHash: 'synthetic-not-a-password' }).success).toBe(false);
+    expect(userSchema.safeParse({ ...user, tokenHash: 'synthetic-not-a-token' }).success).toBe(false);
+  });
   it('rozdziela konta i gospodarstwa, domyślna notatka jest prywatna', () => {
     const record = recordSchemaUnion.parse(note);
     expect(canReadRecord({ userId: id, householdId: id }, record)).toBe(true);
@@ -56,6 +62,11 @@ describe('prywatność i odpowiedzi sync', () => {
     const error = { clientMutationId: id, entityId: id, entityType: 'note', status: 'error', code: 'not_found', retryable: false };
     expect(mutationResultSchema.safeParse(error).success).toBe(true);
     expect(mutationResultSchema.safeParse({ ...error, record: note }).success).toBe(false);
+  });
+  it('odrzuca ACK lub konflikt przypisany do innego rekordu', () => {
+    for (const status of ['ack', 'conflict']) {
+      expect(mutationResultSchema.safeParse({ clientMutationId: id, entityId: partner, entityType: 'note', status, state: { kind: 'record', record: note } }).success).toBe(false);
+    }
   });
   it('ACK i conflict zawierają kanoniczną wersję; pull obsługuje tombstone i resync', () => {
     const state = { kind: 'record', record: note };
@@ -84,6 +95,8 @@ describe('daty i reguły domenowe', () => {
     expect(annualDate(2, 29, 2028)).toBe('2028-02-29');
     expect(monthlyDate(31, 2026, 2)).toBe('2026-02-28');
     expect(monthlyDate(31, 2026, 3)).toBe('2026-03-31');
+    expect(() => annualDate(2, 30, 2027)).toThrow();
+    expect(() => monthlyDate(32, 2026, 3)).toThrow();
   });
   it('odrzuca prywatne przypisanie partnerowi i podwójny termin', () => {
     const task = { ...create, entityType: 'task', data: { title: 'Test', description: '', assignee: 'partner', dueDate: null, dueAt: null, completedAt: null, recurrence: null, timezone: 'Europe/Warsaw' } };

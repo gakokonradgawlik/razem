@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { instantSchema } from './dates.js';
-import { dataSchemas, entityTypeSchema, idSchema, metadataSchema, recordSchemaUnion, validateDomain, visibilitySchema } from './model.js';
+import { dataSchemas, entityTypeSchema, idSchema, recordSchemaUnion, validateDomain, visibilitySchema } from './model.js';
 import type { EntityType } from './model.js';
 
 export const PROTOCOL_VERSION = 1;
@@ -59,7 +59,12 @@ export const mutationResultSchema = z.discriminatedUnion('status', [
   z.strictObject({ ...resultIdentity, status: z.literal('error'), code: z.enum([
     'validation_error', 'not_found', 'mutation_id_reused', 'dependency_failed', 'upgrade_required',
   ]), retryable: z.literal(false) }),
-]);
+]).superRefine((result, ctx) => {
+  if (result.status === 'error') return;
+  const state = result.state.kind === 'record' ? result.state.record : result.state.tombstone;
+  if (state.id !== result.entityId || state.entityType !== result.entityType)
+    ctx.addIssue({ code: 'custom', message: 'Stan nie odpowiada mutacji' });
+});
 export const pushResponseSchema = z.strictObject({
   protocolVersion: z.literal(PROTOCOL_VERSION), results: z.array(mutationResultSchema).min(1).max(MAX_PUSH_BATCH),
 });
@@ -85,15 +90,4 @@ export const localConflictSchema = z.strictObject({
 export const outboxEntrySchema = z.strictObject({
   deviceId: idSchema, mutation: mutationSchema, queuedAt: instantSchema,
   state: z.enum(['pending', 'needs_action']), attempts: z.number().int().nonnegative(),
-});
-// Server-only persistence descriptors. Never put these envelopes in public API responses.
-export const receiptSchema = z.strictObject({
-  userId: idSchema, deviceId: idSchema, clientMutationId: idSchema,
-  payloadFingerprint: z.string().regex(/^[a-f0-9]{64}$/), result: mutationResultSchema,
-  committedAt: instantSchema, expiresAt: instantSchema,
-});
-export const syncChangeSchema = z.strictObject({
-  sequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  ...metadataSchema.pick({ id: true, householdId: true, ownerId: true, visibility: true, version: true }).shape,
-  entityType: entityTypeSchema,
 });

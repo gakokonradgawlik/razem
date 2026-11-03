@@ -28,9 +28,15 @@ export function localTimeToInstant(date: string, time: string, timezone = DEFAUL
 }
 
 export function annualDate(month: number, day: number, year: number): string {
+  z.number().int().min(1).max(9999).parse(year);
+  // A leap year validates the original annual rule before clamping its occurrence.
+  Temporal.PlainDate.from({ year: 2000, month, day }, { overflow: 'reject' });
   return Temporal.PlainDate.from({ year, month, day }, { overflow: 'constrain' }).toString();
 }
 
 export function monthlyDate(nominalDay: number, year: number, month: number): string {
+  z.number().int().min(1).max(31).parse(nominalDay);
+  z.number().int().min(1).max(12).parse(month);
+  z.number().int().min(1).max(9999).parse(year);
   return Temporal.PlainDate.from({ year, month, day: nominalDay }, { overflow: 'constrain' }).toString();
 }

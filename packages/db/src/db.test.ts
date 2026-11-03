@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -10,6 +10,7 @@ it('włącza WAL/FK/timeout; transakcja migracji cofa błąd i zachowuje dane po
   const path = join(directory, 'test.sqlite');
   let connection = openDatabase(path);
   try {
+    expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(connection.sqlite.prepare('PRAGMA journal_mode').get()).toMatchObject({ journal_mode: 'wal' });
     expect(connection.sqlite.prepare('PRAGMA foreign_keys').get()).toMatchObject({ foreign_keys: 1 });
     expect(connection.sqlite.prepare('PRAGMA busy_timeout').get()).toMatchObject({ timeout: 5000 });
