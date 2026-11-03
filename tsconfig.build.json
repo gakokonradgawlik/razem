@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "declaration": true,
+    "sourceMap": true,
+    "customConditions": [],
+    "types": ["node"]
+  },
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
+}

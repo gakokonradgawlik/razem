@@ -1,0 +1,20 @@
+{
+  "name": "@razem/db",
+  "dependencies": {
+    "drizzle-orm": "0.45.4",
+    "better-sqlite3": "13.0.3"
+  },
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  }
+}
