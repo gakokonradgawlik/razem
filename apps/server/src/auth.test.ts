@@ -278,6 +278,15 @@ describe('logowanie i sesje', () => {
     expect((await login(app, 'a@example.test', TEMP_A, '192.0.2.10')).statusCode).toBe(200);
   });
 
+  it('przeterminowane liczniki prób są usuwane przy kolejnych błędach', async () => {
+    const { app, database } = await server();
+    for (let i = 0; i < 3; i++) await login(app, `stary${i}@example.test`, 'nie-to-haslo-123', `192.0.2.${i + 20}`);
+    expect(database.sqlite.prepare('SELECT count(*) AS n FROM auth_throttle').get()).toEqual({ n: 6 });
+    now += 16 * 60_000;
+    await login(app, 'nowy@example.test', 'nie-to-haslo-123', '192.0.2.99');
+    expect(database.sqlite.prepare('SELECT count(*) AS n FROM auth_throttle').get()).toEqual({ n: 2 });
+  });
+
   it('baza, WAL i zdarzenia nie zawierają haseł ani tokenów; limity payloadu', async () => {
     const { app, database } = await server();
     const response = await login(app, 'a@example.test', TEMP_A);

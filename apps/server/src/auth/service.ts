@@ -151,6 +151,7 @@ export class AuthService {
     if (!user || !valid) {
       const at = this.iso();
       const locked = this.accounts.transaction(() => {
+        this.accounts.pruneThrottle(this.iso(-this.config.throttle.windowMs), at);
         const accountLocked = this.registerFailure(accountKey, this.config.throttle.accountFailures);
         const ipLocked = this.registerFailure(ipKey, this.config.throttle.ipFailures);
         if (accountLocked && user) this.accounts.event(user.id, 'login_locked', at);

@@ -1,4 +1,4 @@
-import { and, count, eq, gt, isNotNull, lte, or } from 'drizzle-orm';
+import { and, count, eq, gt, isNotNull, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { authEvents, authThrottle, households, sessions, users } from './schema.js';
 import type { AuthEventKind } from './schema.js';
@@ -50,6 +50,13 @@ export class AccountRepository {
   throttle(keyHash: string) { return this.db.select().from(authThrottle).where(eq(authThrottle.keyHash, keyHash)).get(); }
   saveThrottle(row: typeof authThrottle.$inferSelect) {
     this.db.insert(authThrottle).values(row).onConflictDoUpdate({ target: authThrottle.keyHash, set: row }).run();
+  }
+  /** Drops counters whose window ended and that are not locked, so guessed logins do not accumulate. */
+  pruneThrottle(windowStartedBefore: string, now: string) {
+    return this.db.delete(authThrottle).where(and(
+      lt(authThrottle.windowStartedAt, windowStartedBefore),
+      or(isNull(authThrottle.lockedUntil), lte(authThrottle.lockedUntil, now)),
+    )).run().changes;
   }
   clearThrottle(keyHash: string) { this.db.delete(authThrottle).where(eq(authThrottle.keyHash, keyHash)).run(); }
 }
