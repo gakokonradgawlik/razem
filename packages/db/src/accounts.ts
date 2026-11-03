@@ -32,6 +32,7 @@ export class AccountRepository {
   events(userId: string) { return this.db.select().from(authEvents).where(eq(authEvents.userId, userId)).orderBy(authEvents.id).all(); }
 
   insertSession(row: SessionRow) { this.db.insert(sessions).values(row).run(); }
+  sessionById(id: string): SessionRow | undefined { return this.db.select().from(sessions).where(eq(sessions.id, id)).get(); }
   /** Current token, or the previous one during its short rotation grace window. */
   sessionByTokenHash(hash: string, now: string): SessionRow | undefined {
     return this.db.select().from(sessions).where(or(

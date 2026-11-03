@@ -30,6 +30,13 @@ SHA256 zweryfikowany z `SHASUMS256.txt`), dane wyłącznie syntetyczne.
   ogólny błąd, podrobione cookie i `x-user-id`, rolling/rotacja/okres łaski/wygaśnięcie,
   logout, CSRF (brak/obcy/`null` Origin, cross-site, text/plain), limity konto/IP,
   brak haseł i tokenów w plikach bazy/WAL, limit payloadu 413.
+- `apps/server/src/auth/races.test.ts` (poprawka po review): deterministyczne przeplatanie
+  operacji w trakcie Argon2id (wstrzykiwany hasher wstrzymuje wybrane wywołanie).
+  Login kontra reset CLI / zmiana hasła z innego urządzenia / reset podczas rehash;
+  równoległy rehash dwóch logowań; changePassword (na etapie weryfikacji i hashowania)
+  kontra reset, revoke-sessions, logout, druga zmiana z innego urządzenia i z tej samej
+  sesji; HTTP 401 + czyszczenie cookie. Test mutacyjny: po usunięciu ponownych sprawdzeń
+  w transakcji 13/14 testów failuje.
 - `apps/server/src/auth/passwords.test.ts`: parametry produkcyjne, NFC, odrzucenie
   podmienionych parametrów; `config.test.ts`: zasady produkcyjne.
 

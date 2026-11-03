@@ -13,14 +13,24 @@ export interface AuthConfig {
   argon2: Argon2Params;
   throttle: { accountFailures: number; ipFailures: number; windowMs: number; lockMs: number };
   clock: () => Date;
+  /** Argon2id implementation; replaceable so tests can interleave operations deterministically. */
+  passwords: PasswordHasher;
+}
+export interface PasswordHasher {
+  hash(password: string, params: Argon2Params): Promise<string>;
+  verify(password: string, phc: string): Promise<boolean>;
 }
 export const DEFAULT_AUTH_CONFIG: AuthConfig = {
   sessionTtlMs: 30 * DAY, renewAfterMs: DAY, rotationGraceMs: 2 * 60 * 1000, argon2: DEFAULT_ARGON2,
   throttle: { accountFailures: 5, ipFailures: 20, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 },
   clock: () => new Date(),
+  passwords: { hash: hashPassword, verify: verifyPassword },
 };
+/** Attempts when the stored hash changes during Argon2id only because of a concurrent rehash. */
+const CREDENTIAL_ATTEMPTS = 3;
 
-export type AuthErrorCode = 'invalid_credentials' | 'rate_limited' | 'weak_password' | 'invalid_request' | 'already_bootstrapped' | 'unknown_account';
+export type AuthErrorCode = 'invalid_credentials' | 'rate_limited' | 'weak_password' | 'invalid_request' | 'already_bootstrapped' | 'unknown_account'
+  | 'session_revoked';
 export class AuthError extends Error {
   constructor(readonly code: AuthErrorCode, readonly detail?: string, readonly retryAfterSeconds?: number) { super(code); }
 }
@@ -70,7 +80,7 @@ export class AuthService {
       return { login: login.data, displayName, password: member.temporaryPassword };
     });
     if (members[0]!.login === members[1]!.login) throw new AuthError('invalid_request', 'Loginy muszą się różnić');
-    const hashes = await Promise.all(members.map((m) => hashPassword(m.password, this.config.argon2)));
+    const hashes = await Promise.all(members.map((m) => this.config.passwords.hash(m.password, this.config.argon2)));
     const at = this.iso();
     const householdId = randomUUID();
     const userIds = members.map(() => randomUUID());
@@ -94,8 +104,10 @@ export class AuthService {
     if (!user) throw new AuthError('unknown_account');
     const problem = passwordProblem(temporaryPassword, user.login);
     if (problem) throw new AuthError('weak_password', problem);
-    const hash = await hashPassword(temporaryPassword, this.config.argon2);
+    const hash = await this.config.passwords.hash(temporaryPassword, this.config.argon2);
     const at = this.iso();
+    // The administrator wins over anything that happened meanwhile: the reset is unconditional
+    // and revokes every session, including ones issued while Argon2id was running.
     this.accounts.transaction(() => {
       this.accounts.setPassword(user.id, hash, true, at);
       this.accounts.deleteUserSessions(user.id);
@@ -144,33 +156,46 @@ export class AuthService {
     const ipKey = keyHash('ip', ip);
     const wait = this.lockedFor([accountKey, ipKey]);
     if (wait > 0) throw new AuthError('rate_limited', undefined, wait);
-    const user = this.accounts.userByLogin(normalized);
-    // Unknown logins still pay the full Argon2id cost: no timing oracle for existence.
-    this.dummyHash ??= hashPassword(newToken(), this.config.argon2);
-    const valid = await verifyPassword(password, user?.passwordHash ?? await this.dummyHash);
-    if (!user || !valid) {
+    const { hash, verify } = this.config.passwords;
+    for (let attempt = 1; ; attempt++) {
+      const user = this.accounts.userByLogin(normalized);
+      // Unknown logins still pay the full Argon2id cost: no timing oracle for existence.
+      this.dummyHash ??= hash(newToken(), this.config.argon2);
+      const valid = await verify(password, user?.passwordHash ?? await this.dummyHash);
+      if (!user || !valid) {
+        const at = this.iso();
+        const locked = this.accounts.transaction(() => {
+          this.accounts.pruneThrottle(this.iso(-this.config.throttle.windowMs), at);
+          const accountLocked = this.registerFailure(accountKey, this.config.throttle.accountFailures);
+          const ipLocked = this.registerFailure(ipKey, this.config.throttle.ipFailures);
+          if (accountLocked && user) this.accounts.event(user.id, 'login_locked', at);
+          return accountLocked || ipLocked;
+        });
+        if (locked) throw new AuthError('rate_limited', undefined, Math.ceil(this.config.throttle.lockMs / 1000));
+        throw new AuthError('invalid_credentials');
+      }
+      const rehash = needsRehash(user.passwordHash, this.config.argon2) ? await hash(password, this.config.argon2) : null;
+      const token = newToken();
       const at = this.iso();
-      const locked = this.accounts.transaction(() => {
-        this.accounts.pruneThrottle(this.iso(-this.config.throttle.windowMs), at);
-        const accountLocked = this.registerFailure(accountKey, this.config.throttle.accountFailures);
-        const ipLocked = this.registerFailure(ipKey, this.config.throttle.ipFailures);
-        if (accountLocked && user) this.accounts.event(user.id, 'login_locked', at);
-        return accountLocked || ipLocked;
+      const outcome = this.accounts.transaction(() => {
+        // The password was verified against a snapshot. It only counts if that hash is still
+        // the stored one: a reset or change committed during Argon2id voids this attempt.
+        const current = this.accounts.userById(user.id);
+        if (!current || current.passwordHash !== user.passwordHash) return 'stale' as const;
+        // Another request may have locked the account or IP meanwhile.
+        if (this.lockedFor([accountKey, ipKey]) > 0) return 'locked' as const;
+        this.accounts.clearThrottle(accountKey);
+        this.accounts.deleteExpiredSessions(at);
+        if (rehash) this.accounts.setPassword(user.id, rehash, current.mustChangePassword, current.passwordChangedAt);
+        this.accounts.insertSession(this.sessionRow(user.id, token, at));
+        this.accounts.event(user.id, 'login', at);
+        return 'ok' as const;
       });
-      if (locked) throw new AuthError('rate_limited', undefined, Math.ceil(this.config.throttle.lockMs / 1000));
-      throw new AuthError('invalid_credentials');
+      if (outcome === 'ok') return { token, user: this.accounts.userById(user.id)! };
+      if (outcome === 'locked') throw new AuthError('rate_limited', undefined, this.lockedFor([accountKey, ipKey]) || 1);
+      // Stale: verify again against the current hash (a reset makes the old password fail and count).
+      if (attempt >= CREDENTIAL_ATTEMPTS) throw new AuthError('invalid_credentials');
     }
-    const rehash = needsRehash(user.passwordHash, this.config.argon2) ? await hashPassword(password, this.config.argon2) : null;
-    const token = newToken();
-    const at = this.iso();
-    this.accounts.transaction(() => {
-      this.accounts.clearThrottle(accountKey);
-      this.accounts.deleteExpiredSessions(at);
-      if (rehash) this.accounts.setPassword(user.id, rehash, user.mustChangePassword, user.passwordChangedAt);
-      this.accounts.insertSession(this.sessionRow(user.id, token, at));
-      this.accounts.event(user.id, 'login', at);
-    });
-    return { token, user: this.accounts.userById(user.id)! };
   }
 
   private sessionRow(userId: string, token: string, at: string): SessionRow {
@@ -206,22 +231,48 @@ export class AuthService {
     return { user, session };
   }
 
+  /** Session and account as currently stored; the snapshot in `auth` may be outdated. */
+  private liveAccount(auth: Authenticated): UserRow {
+    const session = this.accounts.sessionById(auth.session.id);
+    const user = session && session.expiresAt > this.iso() ? this.accounts.userById(session.userId) : undefined;
+    if (!user || user.id !== auth.user.id) throw new AuthError('session_revoked');
+    return user;
+  }
+
   async changePassword(auth: Authenticated, currentPassword: string, newPassword: string): Promise<{ token: string; user: UserRow }> {
-    if (!await verifyPassword(currentPassword, auth.user.passwordHash)) throw new AuthError('invalid_credentials');
-    const problem = passwordProblem(newPassword, auth.user.login)
-      ?? (newPassword.normalize('NFC') === currentPassword.normalize('NFC') ? 'Nowe hasło musi różnić się od obecnego' : null);
-    if (problem) throw new AuthError('weak_password', problem);
-    const hash = await hashPassword(newPassword, this.config.argon2);
-    const token = newToken();
-    const at = this.iso();
-    this.accounts.transaction(() => {
-      this.accounts.setPassword(auth.user.id, hash, false, at);
-      // Every other device must log in again; this one continues with a fresh session.
-      this.accounts.deleteUserSessions(auth.user.id);
-      this.accounts.insertSession(this.sessionRow(auth.user.id, token, at));
-      this.accounts.event(auth.user.id, 'password_changed', at);
-    });
-    return { token, user: this.accounts.userById(auth.user.id)! };
+    const { hash, verify } = this.config.passwords;
+    for (let attempt = 1; ; attempt++) {
+      const user = this.liveAccount(auth);
+      if (!await verify(currentPassword, user.passwordHash)) {
+        this.liveAccount(auth); // revoked meanwhile → 401 rather than a wrong-password answer
+        throw new AuthError('invalid_credentials');
+      }
+      const problem = passwordProblem(newPassword, user.login)
+        ?? (newPassword.normalize('NFC') === currentPassword.normalize('NFC') ? 'Nowe hasło musi różnić się od obecnego' : null);
+      if (problem) throw new AuthError('weak_password', problem);
+      const newHash = await hash(newPassword, this.config.argon2);
+      const token = newToken();
+      const at = this.iso();
+      const outcome = this.accounts.transaction(() => {
+        // Re-check at commit: the authorising session must still exist and be valid, and the
+        // password must still be the one just verified. A reset, revoke, logout or another
+        // change during Argon2id rejects this request without writing anything.
+        const session = this.accounts.sessionById(auth.session.id);
+        if (!session || session.expiresAt <= at || session.userId !== user.id) return 'revoked' as const;
+        const current = this.accounts.userById(user.id);
+        if (!current || current.passwordHash !== user.passwordHash) return 'stale' as const;
+        this.accounts.setPassword(user.id, newHash, false, at);
+        // Every other device must log in again; this one continues with a fresh session.
+        this.accounts.deleteUserSessions(user.id);
+        this.accounts.insertSession(this.sessionRow(user.id, token, at));
+        this.accounts.event(user.id, 'password_changed', at);
+        return 'ok' as const;
+      });
+      if (outcome === 'ok') return { token, user: this.accounts.userById(user.id)! };
+      if (outcome === 'revoked') throw new AuthError('session_revoked');
+      // Session intact but hash replaced: only a rehash at login does that; verify again.
+      if (attempt >= CREDENTIAL_ATTEMPTS) throw new AuthError('invalid_credentials');
+    }
   }
 
   logout(auth: Authenticated): void {

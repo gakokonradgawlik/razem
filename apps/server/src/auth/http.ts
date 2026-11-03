@@ -75,6 +75,7 @@ export function registerAuth(app: FastifyInstance, options: HttpAuthOptions) {
     }
     if (error.code === 'weak_password') return reply.code(400).send(apiErrorSchema.parse({ error: 'weak_password', message: error.detail }));
     if (error.code === 'invalid_credentials') return fail(reply, 401, 'invalid_credentials');
+    if (error.code === 'session_revoked') { clearSession(reply); return fail(reply, 401, 'authentication_required'); }
     return fail(reply, 400, 'invalid_request');
   };
 
