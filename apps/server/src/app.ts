@@ -2,9 +2,24 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { apiErrorSchema, healthSchema } from '@razem/contracts';
 import type { Database } from '@razem/db';
+import { registerAuth } from './auth/http.js';
+import { AuthService } from './auth/service.js';
+import type { AuthConfig } from './auth/service.js';
 
-export async function buildApp(options: { database: Database; webRoot?: string }) {
-  const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
+export interface AppOptions {
+  database: Database;
+  webRoot?: string;
+  auth?: Partial<AuthConfig>;
+  /** Defaults to true; only a non-production dev server may set false. */
+  secureCookies?: boolean;
+  publicOrigin?: string;
+  trustProxy?: boolean | string;
+}
+
+export async function buildApp(options: AppOptions) {
+  // logger off: request logs could carry cookies, URLs or payloads. Only fixed messages are printed.
+  const app = Fastify({ logger: false, bodyLimit: 256 * 1024, trustProxy: options.trustProxy ?? false });
+  const auth = new AuthService(options.database, options.auth);
   app.addHook('onSend', async (_request, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'no-referrer');
@@ -21,9 +36,13 @@ export async function buildApp(options: { database: Database; webRoot?: string }
     }
   });
 
-  // Fail closed until RAZ-2 (sessions) and RAZ-4 (sync service). Never trust a
-  // deviceId, ownerId, cookie or request header as an authenticated account here.
-  app.all('/api/*', async (_request, reply) => reply.code(401).send(apiErrorSchema.parse({ error: 'authentication_required' })));
+  // Sessions (RAZ-2) guard every /api route; data endpoints arrive with the sync service (RAZ-4).
+  // Never trust a deviceId, ownerId or request header as an account: only the session cookie.
+  registerAuth(app, {
+    service: auth, secureCookies: options.secureCookies ?? true,
+    ...(options.publicOrigin ? { publicOrigin: options.publicOrigin } : {}),
+  });
+  app.all('/api/*', async (_request, reply) => reply.code(404).send(apiErrorSchema.parse({ error: 'not_found' })));
   app.setErrorHandler((error, _request, reply) => {
     const status = typeof error === 'object' && error !== null && 'statusCode' in error && typeof error.statusCode === 'number' ? error.statusCode : 500;
     reply.code(status >= 400 && status < 500 ? status : 500)

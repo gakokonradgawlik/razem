@@ -1,15 +1,18 @@
-import { mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openDatabase } from '@razem/db';
 import { buildApp } from './app.js';
+import { argon2ParamsFromEnv } from './auth/passwords.js';
+import { openMigratedDatabase, serverSettings } from './config.js';
 
-const path = resolve(process.env.DATABASE_PATH ?? './data/razem.sqlite');
-await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-const database = openDatabase(path);
-const webRoot = process.env.NODE_ENV === 'production'
-  ? fileURLToPath(new URL('../../web/dist', import.meta.url)) : undefined;
-const app = await buildApp({ database, ...(webRoot ? { webRoot } : {}) });
+const settings = serverSettings();
+// Controlled migrations: only the app applies them (transactional, checksummed, with a
+// pre-migration copy); the worker refuses to run on a different schema version.
+const { database, migration } = openMigratedDatabase(settings.databasePath);
+if (migration.applied.length > 0) console.info(`Razem: zastosowano migracje ${migration.applied.join(', ')}`);
+const webRoot = settings.production ? fileURLToPath(new URL('../../web/dist', import.meta.url)) : undefined;
+const app = await buildApp({
+  database, ...(webRoot ? { webRoot } : {}), secureCookies: settings.secureCookies, trustProxy: settings.trustProxy,
+  ...(settings.publicOrigin ? { publicOrigin: settings.publicOrigin } : {}), auth: { argon2: argon2ParamsFromEnv() },
+});
 let stopping = false;
 async function stop() {
   if (stopping) return;
@@ -20,7 +23,7 @@ async function stop() {
 process.once('SIGINT', () => { void stop(); });
 process.once('SIGTERM', () => { void stop(); });
 try {
-  await app.listen({ host: process.env.HOST ?? '127.0.0.1', port: Number(process.env.PORT ?? 3100) });
+  await app.listen({ host: settings.host, port: settings.port });
   console.info('Razem: serwer uruchomiony');
 } catch {
   await stop();

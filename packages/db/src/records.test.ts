@@ -44,7 +44,7 @@ describe('serwis uprawnień: konta A/B', () => {
     expect(shared).toMatchObject({ ownerId: A.userId, householdId: H, version: 1, deletedAt: null });
     expect(repo.get(B, 'shopping_list', shared.id)?.data).toEqual({ name: 'Zakupy' });
     expect(repo.get(B, 'note', priv.id)).toBeNull();
-    expect(repo.get(A, 'note', priv.id)?.data.title).toBe('Prywatna notatka A');
+    expect(repo.get(A, 'note', priv.id)?.data).toHaveProperty('title', 'Prywatna notatka A');
     expect(repo.list(B, 'note')).toEqual([]);
     expect(repo.list(B, 'shopping_list').map((r) => r.id)).toEqual([shared.id]);
     expect(repo.get(FOREIGN, 'shopping_list', shared.id)).toBeNull();
@@ -91,7 +91,7 @@ describe('serwis uprawnień: konta A/B', () => {
     // Moving an item to another list (e.g. from shared into partner's private) is rejected.
     expect(repo.update(B, { entityType: 'shopping_item', id: sharedItem.id, baseVersion: 1, patch: { listId: privList.id } })).toEqual(INVALID);
     expect(repo.get(B, 'shopping_item', privItem.id)).toBeNull();
-    expect(repo.get(B, 'shopping_item', sharedItem.id)?.data.name).toBe('Mleko');
+    expect(repo.get(B, 'shopping_item', sharedItem.id)?.data).toHaveProperty('name', 'Mleko');
     expect(ack(repo.update(B, { entityType: 'shopping_item', id: sharedItem.id, baseVersion: 1, patch: { checked: true } })).version).toBe(2);
   });
 
