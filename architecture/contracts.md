@@ -68,8 +68,12 @@ Idempotencja: `(session.userId, deviceId, clientMutationId)` i fingerprint SHA25
 kanonicznego payloadu. Ponowienie identycznej mutacji odtwarza receipt; podmieniony
 payload zwraca mutation_id_reused. ACK dopiero po transakcyjnym commit rekordu,
 journala i receipt. DeviceId nie jest uprawnieniem. Retencja receipts/tombstones
-co najmniej 90 dni, kosz 30 dni. Te gwarancje implementuje przyszły serwis sync,
-RAZ-1 definiuje ich format i negatywne granice wejścia.
+co najmniej 90 dni, kosz 30 dni. Implementacja serwera: RAZ-4, opis w
+architecture/sync.md („Implementacja serwera RAZ-4”). Dodatkowy kod elementu
+`already_exists` (drugie wystąpienie zadania tego samego dnia), błędy API
+`upgrade_required` i `payload_too_large`; limity `MAX_PUSH_BYTES` i
+`MAX_PULL_PAGE_BYTES` (1 MiB). Serwer używa `pushEnvelopeSchema`, by walidować
+mutacje pojedynczo; klient nadal wysyła zgodnie z `pushRequestSchema`.
 
 ## Stronicowany pull
 

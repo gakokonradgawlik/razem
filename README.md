@@ -2,8 +2,9 @@
 
 Prywatny organizer dla dwóch osób. Fundament RAZ-1: npm workspaces, wspólne
 kontrakty i szkielety aplikacji. RAZ-2: schemat SQLite i migracje, dwa konta,
-sesje i serwis uprawnień. **To jeszcze nie jest działający organizer.**
-Ekran informacyjny nie zapisuje danych. Ekran logowania, serwis sync, edycja offline,
+sesje i serwis uprawnień. RAZ-4: serwer synchronizacji (push/pull, idempotencja,
+konflikty, kosz/tombstones, retencja). **To jeszcze nie jest działający organizer.**
+Ekran informacyjny nie zapisuje danych. Ekran logowania, klient sync, edycja offline,
 Service Worker i przypomnienia mają kolejne zadania.
 
 ## Start
@@ -91,8 +92,8 @@ NODE_ENV=production npm start
 
 Fastify obsługuje build web i API pod jednym originem, w tym ścieżki SPA.
 `/healthz` sprawdza proces, `/readyz` również dostęp do SQLite. Każde `/api` wymaga
-sesji (401); endpointy danych dostarczy serwis sync (RAZ-4) — do tego czasu zalogowany
-dostaje 404. Nagłówki typu `x-user-id` ani deviceId nie nadają uprawnień.
+sesji (401); dane domenowe wyłącznie przez `/api/sync/push` i `/api/sync/pull`
+(RAZ-4, opis w architecture/sync.md). Nagłówki typu `x-user-id` ani deviceId nie nadają uprawnień.
 Za reverse proxy ustaw `RAZEM_PUBLIC_ORIGIN` (dokładny origin HTTPS) i ewentualnie
 `RAZEM_TRUST_PROXY`.
 Worker na razie utrzymuje połączenie i obsługuje zakończenie procesu; niczego nie wysyła.
