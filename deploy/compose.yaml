@@ -12,6 +12,9 @@ services:
       HOST: 0.0.0.0
       PORT: '3100'
       DATABASE_PATH: /data/razem.sqlite
+      # Required behind the HTTPS proxy: exact PWA origin for the CSRF/Origin check.
+      PUBLIC_ORIGIN: ${RAZEM_PUBLIC_ORIGIN:-}
+      TRUST_PROXY: ${RAZEM_TRUST_PROXY:-}
     ports:
       - '127.0.0.1:${RAZEM_PORT:-3100}:3100'
     volumes:
