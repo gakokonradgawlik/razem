@@ -53,8 +53,9 @@ Kod: `apps/server/src/sync/` (`service.ts`, `http.ts`), `packages/db/src/records
   **wyłącznie** pole odhaczenia (`shopping_item.checked`, `task.completedAt`,
   `task_occurrence.completedAt`), którego wartość jest już stanem bieżącym (to samo odhaczenie na
   obu telefonach), dostaje `ack` bez nowej wersji. Każda inna nieaktualna edycja – także treści
-  identycznej z bieżącą albo odhaczenia połączonego z polem treści – to `conflict`. Edycja rekordu w koszu → `conflict`; drugie wystąpienie zadania tego
-  samego dnia → `already_exists` (jeden rekord na `(taskId, occurrenceKey)`).
+  identycznej z bieżącą albo odhaczenia połączonego z polem treści – to `conflict`. Edycja
+  rekordu w koszu → `conflict`; drugie wystąpienie zadania tego samego dnia → `already_exists`
+  (jeden rekord na `(taskId, occurrenceKey)`).
 - **Kosz i tombstones**: delete ustawia `deletedAt` (rekord zostaje w koszu, w snapshot i delta,
   restore wersjonowane). Po 30 dniach zadanie retencji usuwa rekord **z dziećmi** i zapisuje
   tombstone (typ, id, ACL, wersja+1, daty – bez treści) jako nową wersję w journalu. Tombstones
