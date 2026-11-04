@@ -73,6 +73,9 @@ Kod: `apps/server/src/sync/` (`service.ts`, `http.ts`), `packages/db/src/records
   nieczytelny) lub `cursor_expired` (starszy niż 90 dni albo sprzed przyciętego journala).
 - **Retencja** (`SyncService.maintenance`, co godzinę w procesie serwera i przy starcie):
   kosz 30 dni → tombstones, receipts 90 dni, journal 90 dni (podnosi `journal_floor`).
+  Globalny punkt synchronizacji (`RecordRepository.maxSequence`) to max(najwyższa sekwencja
+  journala, `journal_floor`) – monotoniczny także po całkowitym przycięciu journala; sekwencje
+  (AUTOINCREMENT) nigdy nie są ponownie używane, więc świeży snapshot i delta pozostają ciągłe.
 - **ACL**: wszystkie odczyty i wyniki (ack, conflict, pull, journal) przez `accessPolicy`;
   cudzy prywatny i nieistniejący dają identyczne `not_found` bez treści i wersji. Granica: create
   z UUID, który już istnieje jako cudzy prywatny rekord, też zwraca `not_found` (różne od `ack`

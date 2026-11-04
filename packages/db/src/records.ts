@@ -7,7 +7,7 @@ import {
 } from '@razem/contracts';
 import type { AccountScope, EntityType, SyncRecord } from '@razem/contracts';
 import type { Database } from './index.js';
-import { domainTables, syncChanges, taskOccurrences, tombstones } from './schema.js';
+import { domainTables, syncChanges, syncState, taskOccurrences, tombstones } from './schema.js';
 
 export type Tombstone = z.infer<typeof tombstoneSchema>;
 export type ServerState = { kind: 'record'; record: SyncRecord } | { kind: 'tombstone'; tombstone: Tombstone };
@@ -303,8 +303,14 @@ export class RecordRepository {
     )).get()?.max ?? 0;
   }
 
+  /**
+   * Global sync point: the highest journal sequence ever issued. Never below the retention floor,
+   * so it stays monotonic when retention empties the journal (AUTOINCREMENT never reuses sequences).
+   */
   maxSequence(): number {
-    return this.database.db.select({ max: sql<number | null>`max(${syncChanges.sequence})` }).from(syncChanges).get()?.max ?? 0;
+    const journal = this.database.db.select({ max: sql<number | null>`max(${syncChanges.sequence})` }).from(syncChanges).get()?.max ?? 0;
+    const floor = this.database.db.select({ floor: syncState.journalFloor }).from(syncState).where(eq(syncState.id, 1)).get()?.floor ?? 0;
+    return Math.max(journal, floor);
   }
 
   /**

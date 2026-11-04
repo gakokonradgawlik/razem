@@ -490,6 +490,48 @@ describe('pull: snapshot, delta, retencja', () => {
     sync.maintenance();
     expect(count('SELECT count(*) AS n FROM mutation_receipts')).toBe(0);
   });
+
+  it('retencja usuwa cały journal: świeży wielostronicowy bootstrap kończy się, kolejny pull to pusta delta, późniejszy zapis dociera', async () => {
+    const { a, b } = await devices();
+    const list = randomUUID();
+    await a.push(create('shopping_list', { name: 'Zakupy' }, 'shared', list), create('shopping_item', item(list, 'Chleb')),
+      create('note', note('Wspólna'), 'shared'), create('note', note('Prywatna A', 'sekret'), 'private'));
+    await travel(91 * DAY);
+    sync.maintenance();
+    // The whole journal is gone, the domain records stay; the floor is above zero.
+    expect(count('SELECT count(*) AS n FROM sync_changes')).toBe(0);
+    expect(sync.store.state().journalFloor).toBeGreaterThan(0);
+    expect(serverView(B)).toHaveLength(3);
+    // Fresh bootstrap, one record per page: the issued cursors are continuable, no resync loop.
+    const fresh = new Device(b.cookie);
+    const pages: PullResponse[] = [];
+    for (let guard = 0; guard < 10; guard++) {
+      const page = await fresh.pullPage(1);
+      pages.push(page);
+      expect(page.status).toBe('ok');
+      if (page.status !== 'ok' || !page.hasMore) break;
+    }
+    expect(pages).toHaveLength(3);
+    expect(fresh.records()).toEqual(serverView(B));
+    // The next pull is a valid empty delta, repeatedly.
+    for (let i = 0; i < 2; i++) {
+      const empty = await fresh.pullPage(1);
+      expect(empty).toMatchObject({ status: 'ok', mode: 'delta', changes: [], hasMore: false });
+    }
+    // A single-page bootstrap after the prune is continuable too.
+    const single = new Device(b.cookie);
+    await single.sync();
+    expect(await single.pullPage()).toMatchObject({ status: 'ok', mode: 'delta', changes: [] });
+    // A later write reaches both cursors as a delta (no resync_required).
+    const [added] = await a.push(create('note', note('Po retencji'), 'shared'));
+    for (const device of [fresh, single]) {
+      const page = await device.pullPage(1);
+      expect(page).toMatchObject({ status: 'ok', mode: 'delta', hasMore: false });
+      expect(device.records()).toEqual(serverView(B));
+      expect(device.records().map((r) => r.id)).toContain(recordOf(added!).id);
+    }
+    expect(sync.store.state().journalFloor).toBeLessThan(sync.records.maxSequence());
+  });
 });
 
 describe('HTTP: 401/403/409/5xx, payload, zgadywanie ID i list_id', () => {
