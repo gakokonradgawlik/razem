@@ -4,7 +4,7 @@ Prywatny organizer dla dwóch osób. Fundament RAZ-1: npm workspaces, wspólne
 kontrakty i szkielety aplikacji. RAZ-2: schemat SQLite i migracje, dwa konta,
 sesje i serwis uprawnień. RAZ-4: serwer synchronizacji (push/pull, idempotencja,
 konflikty, kosz/tombstones, retencja). RAZ-3: interfejs w stylu iOS i szkielet wszystkich
-ekranów (bez zapisu danych). **To jeszcze nie jest działający organizer.**
+ekranów — listy, szczegóły, edycja, zawartość list zakupów (bez zapisu danych). **To jeszcze nie jest działający organizer.**
 Formularze i ekran logowania nie zapisują danych ani nie logują (adapter „niedostępne”);
 prawdziwe auth, klient sync, edycja offline, Service Worker i przypomnienia mają kolejne zadania.
 
@@ -73,6 +73,8 @@ docker compose -f deploy/compose.yaml config
 React. Playwright wymaga buildu i pakietów systemowych przeglądarek; uruchamia
 własny serwer produkcyjny na **127.0.0.1:4317**, dwa odizolowane konteksty na test,
 Chromium oraz WebKit. Serwer i tymczasowa baza są usuwane przy zakończeniu.
+Drugi serwer, **127.0.0.1:4318** (Vite, `apps/web/vite.fixtures.config.ts`), serwuje tę samą
+aplikację z syntetycznymi wpisami tylko do testów ekranów szczegółów/edycji; nie wchodzi do buildu.
 `reuseExistingServer: false` zapobiega badaniu cudzej usługi. Raporty z `test-results/`
 usuń po analizie (mogą zawierać dane, gdy późniejsze testy użyją prawdziwych kont).
 WebKit nie zastępuje fizycznego iPhone'a.
