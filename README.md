@@ -3,9 +3,10 @@
 Prywatny organizer dla dwóch osób. Fundament RAZ-1: npm workspaces, wspólne
 kontrakty i szkielety aplikacji. RAZ-2: schemat SQLite i migracje, dwa konta,
 sesje i serwis uprawnień. RAZ-4: serwer synchronizacji (push/pull, idempotencja,
-konflikty, kosz/tombstones, retencja). **To jeszcze nie jest działający organizer.**
-Ekran informacyjny nie zapisuje danych. Ekran logowania, klient sync, edycja offline,
-Service Worker i przypomnienia mają kolejne zadania.
+konflikty, kosz/tombstones, retencja). RAZ-3: interfejs w stylu iOS i szkielet wszystkich
+ekranów — listy, szczegóły, edycja, zawartość list zakupów (bez zapisu danych). **To jeszcze nie jest działający organizer.**
+Formularze i ekran logowania nie zapisują danych ani nie logują (adapter „niedostępne”);
+prawdziwe auth, klient sync, edycja offline, Service Worker i przypomnienia mają kolejne zadania.
 
 ## Start
 
@@ -72,6 +73,8 @@ docker compose -f deploy/compose.yaml config
 React. Playwright wymaga buildu i pakietów systemowych przeglądarek; uruchamia
 własny serwer produkcyjny na **127.0.0.1:4317**, dwa odizolowane konteksty na test,
 Chromium oraz WebKit. Serwer i tymczasowa baza są usuwane przy zakończeniu.
+Drugi serwer, **127.0.0.1:4318** (Vite, `apps/web/vite.fixtures.config.ts`), serwuje tę samą
+aplikację z syntetycznymi wpisami tylko do testów ekranów szczegółów/edycji; nie wchodzi do buildu.
 `reuseExistingServer: false` zapobiega badaniu cudzej usługi. Raporty z `test-results/`
 usuń po analizie (mogą zawierać dane, gdy późniejsze testy użyją prawdziwych kont).
 WebKit nie zastępuje fizycznego iPhone'a.
@@ -119,5 +122,5 @@ Nie uruchamiaj `down -v` na instalacji z danymi. Nie używamy Vite preview w pro
 Czytaj [docs/START.md](docs/START.md), [kontrakt v1](architecture/contracts.md),
 [synchronizację](architecture/sync.md), [bezpieczeństwo](security/access.md)
 i [repozytorium/wersje](operations/repository.md). Dokumentacja produktu opisuje
-docelowe MVP; zrealizowany zakres i dowody: [quality/raz-1.md](quality/raz-1.md), [quality/raz-2.md](quality/raz-2.md).
+docelowe MVP; zrealizowany zakres i dowody: [quality/raz-1.md](quality/raz-1.md), [quality/raz-2.md](quality/raz-2.md), [quality/raz-3.md](quality/raz-3.md).
 W repo nie ma kont demo, haseł domyślnych, kluczy ani danych domowników.
