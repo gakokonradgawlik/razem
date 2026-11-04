@@ -317,6 +317,61 @@ describe('sesja i konta', () => {
     expect(await store(tabA).get(id)).toBeUndefined();
   });
 
+  it('konto przełączone w innej karcie W TRAKCIE cyklu (po /api/me, między partiami, przed pull): nic z A nie trafia do B', async () => {
+    // B's private note on the server must never land in A's database either.
+    const phoneB = new Phone(server);
+    const b = await signedIn(phoneB, 'b');
+    const secretB = ok(await b.command((s) => s.create('note', note('Prywatne B'), 'private')));
+    await b.syncNow();
+    // Moment of the switch: after the n-th response of the given kind (one change per push batch).
+    const moments = [['GET /api/me', 1, 0], ['POST /api/sync/push', 1, 1], ['POST /api/sync/push', 3, 3]] as const;
+    for (const [request, nth, sentAsA] of moments) {
+      const phone = new Phone(server);
+      const tab = await signedIn(phone, 'a', { pushBytes: 1 });
+      phone.setOffline(true);
+      const ids: string[] = [];
+      for (let n = 1; n <= 3; n++) ids.push(ok(await tab.command((s) => s.create('note', note(`A ${request} ${nth} #${n}`, 'treść A'), 'private'))));
+      phone.setOffline(false);
+      let seen = 0;
+      phone.network.afterResponse = async (done) => {
+        if (done !== request || ++seen !== nth) return;
+        phone.network.afterResponse = null;
+        await phone.network.signInElsewhere(ACCOUNTS.b);
+      };
+      await tab.syncNow();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Nothing of A reached B; what went out before the switch belongs to A.
+      expect(server.count('notes', `owner_id = '${ACCOUNTS.b.id}' AND body = 'treść A'`)).toBe(0);
+      expect(ids.map((id) => serverRow(id)?.owner_id ?? null)).toEqual(ids.map((_, n) => n < sentAsA ? ACCOUNTS.a.id : null));
+      // The tab follows the browser's session (B) …
+      expect(tab.getSnapshot().account?.userId).toBe(ACCOUNTS.b.id);
+      // … and A's pending changes stay in A's database, without B's data, until A signs in.
+      expect(await tab.login(ACCOUNTS.a.login, ACCOUNTS.a.password)).toEqual({ ok: true });
+      expect(tab.getSnapshot()).toMatchObject({ account: { userId: ACCOUNTS.a.id }, unsent: 3 - sentAsA });
+      expect(await store(tab).get(secretB)).toBeUndefined();
+      await tab.syncNow();
+      expect(tab.getSnapshot()).toMatchObject({ unsent: 0, status: { connection: 'ok' } });
+      for (const id of ids) expect(serverRow(id)).toMatchObject({ owner_id: ACCOUNTS.a.id, visibility: 'private' });
+      expect(await store(tab).get(secretB)).toBeUndefined();
+    }
+  });
+
+  it('stop() (wylogowanie/zmiana konta w tej karcie) przerywa trwający cykl przed kolejną partią', async () => {
+    const phone = new Phone(server);
+    const tab = await signedIn(phone, 'a', { pushBytes: 1 });
+    phone.setOffline(true);
+    for (let n = 1; n <= 3; n++) ok(await tab.command((s) => s.create('note', note(`Przerwany ${n}`), 'private')));
+    phone.setOffline(false);
+    server.pushes.length = 0;
+    const before = phone.network.requests.length;
+    const engine = tab.engine!;
+    phone.network.afterResponse = async (done) => { if (done === 'POST /api/sync/push') { phone.network.afterResponse = null; engine.stop(); } };
+    expect(await engine.sync()).toBe('skipped_locked');
+    expect(server.pushes).toHaveLength(1);
+    expect(phone.network.requests.slice(before)).toEqual(['GET /api/me', 'POST /api/sync/push']);
+    expect(server.count('notes', "title LIKE 'Przerwany%'")).toBe(1);
+  });
+
   it('wylogowanie z oczekującymi zmianami wymaga decyzji, potem czyści dane konta', async () => {
     const phone = new Phone(server);
     const tab = await signedIn(phone, 'a');
@@ -402,6 +457,69 @@ describe('pełna resynchronizacja, stronicowanie, karty i migracja', () => {
       for (const id of ids) expect(serverRow(id)).toMatchObject({ version: 1 });
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(second.getSnapshot()).toMatchObject({ unsent: 0, status: { connection: 'ok' } });
+      await first.logout({ discardPending: true });
+    }
+  });
+
+  it('lease (bez Web Locks): długi push > 60 s odnawia blokadę; zamrożona karta po przejęciu nie wysyła dalej', async () => {
+    let now = Date.now();
+    const options = { locks: null, now: () => now };
+    // Ten edits of one record: one change per round, so the cycle has ten push requests.
+    const prepare = async () => {
+      const phone = new Phone(server);
+      const first = await signedIn(phone, 'a', options);
+      const second = phone.tab(options); open.push(second);
+      await second.init();
+      const id = ok(await first.command((s) => s.create('note', note('Łańcuch edycji'), 'private')));
+      await first.syncNow();
+      phone.setOffline(true);
+      for (let n = 1; n <= 10; n++) ok(await first.command((s) => s.update('note', id, { body: `wersja ${n}` })));
+      phone.setOffline(false);
+      server.pushes.length = 0; phone.network.maxPushesInFlight = 0;
+      return { phone, first, second, id };
+    };
+
+    // 1. Every request takes 8 s; after > 60 s the second tab tries to sync and must find the lease held.
+    {
+      const { phone, first, second, id } = await prepare();
+      const secondOutcomes: string[] = [];
+      let rounds = 0;
+      phone.network.beforePush = async () => {
+        now += 8_000;
+        if (++rounds === 9) {
+          phone.network.beforePush = null;
+          secondOutcomes.push(await second.engine!.sync());
+          phone.network.beforePush = async () => { now += 8_000; };
+        }
+      };
+      expect(await first.engine!.sync()).toBe('done');
+      phone.network.beforePush = null;
+      expect(secondOutcomes).toEqual(['skipped_locked']);
+      expect(server.pushes).toHaveLength(10);
+      expect(phone.network.maxPushesInFlight).toBe(1);
+      expect(serverRow(id)).toMatchObject({ body: 'wersja 10', version: 11 });
+      await first.logout({ discardPending: true });
+    }
+
+    // 2. The first tab freezes (iOS background) after its 3rd push; its lease expires, the second
+    //    tab takes over and finishes. On resume the first tab has lost the lease and sends nothing more.
+    {
+      const { phone, first, second, id } = await prepare();
+      let pushes = 0, sentWhenResumed = -1;
+      phone.network.afterResponse = async (done) => {
+        if (done !== 'POST /api/sync/push' || ++pushes !== 3) return;
+        phone.network.afterResponse = null;
+        now += 120_000;
+        expect(await second.engine!.sync()).toBe('done');
+        sentWhenResumed = server.pushes.length;
+      };
+      expect(await first.engine!.sync()).toBe('skipped_locked');
+      expect(server.pushes.length).toBe(sentWhenResumed);
+      expect(phone.network.maxPushesInFlight).toBe(1);
+      expect(serverRow(id)).toMatchObject({ body: 'wersja 10', version: 11 });
+      await first.syncNow(); await second.syncNow();
+      expect(first.getSnapshot()).toMatchObject({ unsent: 0, status: { connection: 'ok' } });
+      expect(serverRow(id)).toMatchObject({ version: 11 });
       await first.logout({ discardPending: true });
     }
   });

@@ -5,6 +5,13 @@ import type { EntityType } from './model.js';
 
 export const PROTOCOL_VERSION = 1;
 export const MAX_PUSH_BATCH = 100;
+/**
+ * Required on /api/sync/push and /api/sync/pull: the account (user ID) whose local queue and
+ * database the request belongs to. The server compares it with the session of the same
+ * request and answers 409 `account_mismatch` otherwise, so a cookie switched to another
+ * account mid-cycle (sign-in in another tab) can never carry or receive the first account's data.
+ */
+export const SYNC_ACCOUNT_HEADER = 'x-razem-account';
 export const MAX_PULL_PAGE = 200;
 export const RETENTION_DAYS = 90;
 export const TRASH_DAYS = 30;

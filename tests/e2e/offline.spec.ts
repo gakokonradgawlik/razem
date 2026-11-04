@@ -79,7 +79,8 @@ test('restart karty przy niedostępnym serwerze zachowuje kolejkę; potem jeden 
     await context.unroute('**/api/**');
     await again.goto('/');
     await expect(badge(again)).toContainText('Zsynchronizowano', { timeout: 20_000 });
-    const pull = await context.request.get('/api/sync/pull');
+    const me = await (await context.request.get('/api/me')).json() as { user: { id: string } };
+    const pull = await context.request.get('/api/sync/pull', { headers: { 'x-razem-account': me.user.id } });
     const body = await pull.json() as { changes: { record?: { data: { title: string } } }[] };
     expect(body.changes.filter((change) => change.record?.data.title === `Przy awarii serwera ${tag}`)).toHaveLength(1);
   } finally { await context.close(); }

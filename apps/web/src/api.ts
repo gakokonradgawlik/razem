@@ -1,14 +1,14 @@
 // HTTP client of the PWA. Every request has a time limit; the caller decides what a
 // failure means. A response is never interpreted as success unless it parses with the
 // shared contract. The fetcher is injectable so tests talk to the real Fastify app.
-import { apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema } from '@razem/contracts';
+import { SYNC_ACCOUNT_HEADER, apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema } from '@razem/contracts';
 import type { MeResponse, PullResponse, PushRequest, PushResponse } from '@razem/contracts';
 
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 export type ApiFailure =
   | 'network' | 'timeout' | 'server' | 'authentication_required' | 'password_change_required'
   | 'invalid_credentials' | 'rate_limited' | 'weak_password' | 'upgrade_required' | 'payload_too_large'
-  | 'invalid_request' | 'forbidden' | 'invalid_response';
+  | 'invalid_request' | 'forbidden' | 'invalid_response' | 'account_mismatch' | 'aborted';
 
 export class ApiError extends Error {
   constructor(readonly kind: ApiFailure, readonly status = 0, readonly retryAfterSeconds?: number) { super(`API ${kind}`); }
@@ -21,14 +21,17 @@ export const REQUEST_TIMEOUT_MS = 10_000;
 export class Api {
   constructor(private readonly fetcher: Fetcher = (url, init) => fetch(url, init), private readonly timeoutMs = REQUEST_TIMEOUT_MS) {}
 
-  private async request(path: string, init: RequestInit = {}): Promise<unknown> {
+  private async request(path: string, init: RequestInit = {}, abort?: AbortSignal): Promise<unknown> {
     let response: Response;
+    const timeout = AbortSignal.timeout(this.timeoutMs);
     try {
+      if (abort?.aborted) throw new DOMException('Aborted', 'AbortError');
       response = await this.fetcher(path, {
-        ...init, credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(this.timeoutMs),
+        ...init, credentials: 'same-origin', cache: 'no-store', signal: abort ? AbortSignal.any([timeout, abort]) : timeout,
         headers: { Accept: 'application/json', ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...init.headers },
       });
     } catch (error) {
+      if (abort?.aborted) throw new ApiError('aborted');
       throw new ApiError(error instanceof DOMException && error.name === 'TimeoutError' ? 'timeout' : 'network');
     }
     if (response.status === 204) return null;
@@ -46,6 +49,7 @@ export class Api {
     if (error === 'password_change_required') throw new ApiError('password_change_required', response.status);
     if (error === 'weak_password') throw new ApiError('weak_password', response.status);
     if (error === 'upgrade_required') throw new ApiError('upgrade_required', response.status);
+    if (error === 'account_mismatch') throw new ApiError('account_mismatch', response.status);
     if (response.status === 403) throw new ApiError('forbidden', 403);
     // A proxy page or unknown status: treat like an unreachable server, never as success.
     if (!code.success) throw new ApiError('server', response.status);
@@ -67,12 +71,17 @@ export class Api {
     return this.parse(meResponseSchema, await this.request('/api/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }));
   }
   async logout(): Promise<void> { await this.request('/api/auth/logout', { method: 'POST', body: '{}' }); }
-  async push(input: PushRequest): Promise<PushResponse> {
+  /**
+   * Sync requests carry the account their local database belongs to; the server checks it
+   * against the session of the same request (409 account_mismatch), so a session switched to
+   * another account in the meantime can neither receive this queue nor fill this database.
+   */
+  async push(input: PushRequest, account: string, abort?: AbortSignal): Promise<PushResponse> {
     const payload = pushRequestSchema.parse(input);
-    return this.parse(pushResponseSchema, await this.request('/api/sync/push', { method: 'POST', body: JSON.stringify(payload) }));
+    return this.parse(pushResponseSchema, await this.request('/api/sync/push', { method: 'POST', body: JSON.stringify(payload), headers: { [SYNC_ACCOUNT_HEADER]: account } }, abort));
   }
-  async pull(cursor: string | undefined, limit: number): Promise<PullResponse> {
+  async pull(cursor: string | undefined, limit: number, account: string, abort?: AbortSignal): Promise<PullResponse> {
     const query = new URLSearchParams({ limit: String(limit), ...(cursor ? { cursor } : {}) });
-    return this.parse(pullResponseSchema, await this.request(`/api/sync/pull?${query}`));
+    return this.parse(pullResponseSchema, await this.request(`/api/sync/pull?${query}`, { headers: { [SYNC_ACCOUNT_HEADER]: account } }, abort));
   }
 }

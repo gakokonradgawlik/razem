@@ -54,15 +54,31 @@ export class Network {
   timeout = false;
   /** Called before each pull request (e.g. to write on the server during paging). */
   beforePull: (() => Promise<void>) | null = null;
+  /** Called before a push is sent / after any response arrived (the caller's code has not seen it yet). */
+  beforePush: (() => Promise<void>) | null = null;
+  afterResponse: ((request: string) => Promise<void>) | null = null;
+  /** Push requests in flight now and at most at any moment (parallel sending of one queue). */
+  pushesInFlight = 0;
+  maxPushesInFlight = 0;
   requests: string[] = [];
   constructor(private readonly server: Server) {}
 
   readonly fetcher: Fetcher = async (url, init) => {
+    const isPush = url === '/api/sync/push';
+    if (isPush) { this.pushesInFlight++; this.maxPushesInFlight = Math.max(this.maxPushesInFlight, this.pushesInFlight); }
+    let response: Response;
+    try { response = await this.send(url, init); } finally { if (isPush) this.pushesInFlight--; }
+    if (this.afterResponse) await this.afterResponse(`${init.method ?? 'GET'} ${url.split('?')[0]}`);
+    return response;
+  };
+
+  private async send(url: string, init: RequestInit): Promise<Response> {
     this.requests.push(`${init.method ?? 'GET'} ${url.split('?')[0]}`);
     if (this.offline) throw new TypeError('Failed to fetch');
     if (this.timeout) throw new DOMException('The operation timed out.', 'TimeoutError');
     if (this.outage) return new Response('<html>Bad gateway</html>', { status: this.outage, headers: { 'content-type': 'text/html' } });
     if (url.startsWith('/api/sync/pull') && this.beforePull) await this.beforePull();
+    if (url === '/api/sync/push' && this.beforePush) await this.beforePush();
     const headers: Record<string, string> = { ...(init.headers as Record<string, string>), origin: ORIGIN, 'sec-fetch-site': 'same-origin' };
     if (this.cookie) headers.cookie = this.cookie;
     const body = typeof init.body === 'string' ? init.body : undefined;
@@ -77,7 +93,16 @@ export class Network {
     const out = new Headers({ 'content-type': String(response.headers['content-type'] ?? 'application/json') });
     if (response.headers['retry-after']) out.set('retry-after', String(response.headers['retry-after']));
     return new Response(response.statusCode === 204 ? null : response.body, { status: response.statusCode, headers: out });
-  };
+  }
+
+  /** Signs this device's browser in as someone else (as another tab would): the cookie changes. */
+  async signInElsewhere(account: { login: string; password: string }) {
+    const hook = this.afterResponse; this.afterResponse = null;
+    try {
+      const response = await this.send('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login: account.login, password: account.password }) });
+      if (!response.ok) throw new Error(`login failed ${response.status}`);
+    } finally { this.afterResponse = hook; }
+  }
 }
 
 export class MemoryStorage {

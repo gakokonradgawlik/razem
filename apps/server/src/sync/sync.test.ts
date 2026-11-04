@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { MAX_PULL_PAGE, pullResponseSchema, pushResponseSchema } from '@razem/contracts';
+import { MAX_PULL_PAGE, SYNC_ACCOUNT_HEADER, pullResponseSchema, pushResponseSchema } from '@razem/contracts';
 import type { AccountScope, EntityType, PullResponse, PushResponse, SyncRecord } from '@razem/contracts';
 import { SNAPSHOT_ORDER, migrate, openDatabase } from '@razem/db';
 import type { Database, ServerState } from '@razem/db';
@@ -71,8 +71,13 @@ class Device {
   readonly local = new Map<string, ServerState>();
   constructor(public cookie: string, readonly account?: { login: string; password: string }) { registry.push(this); }
 
-  pushRaw(payload: unknown, headers: Record<string, string> = {}) {
-    return app.inject({ method: 'POST', url: '/api/sync/push', headers: { ...json, cookie: this.cookie, ...headers }, payload: payload as never });
+  /** Account the session cookie belongs to (sent as SYNC_ACCOUNT_HEADER, like the PWA does). */
+  async accountHeader(): Promise<Record<string, string>> {
+    const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie: this.cookie } });
+    return me.statusCode === 200 ? { [SYNC_ACCOUNT_HEADER]: (me.json() as { user: { id: string } }).user.id } : {};
+  }
+  async pushRaw(payload: unknown, headers: Record<string, string> = {}) {
+    return app.inject({ method: 'POST', url: '/api/sync/push', headers: { ...json, cookie: this.cookie, ...(await this.accountHeader()), ...headers }, payload: payload as never });
   }
   async push(...mutations: Mut[]): Promise<PushResponse['results']> {
     const response = await this.pushRaw({ protocolVersion: 1, deviceId: this.deviceId, mutations });
@@ -81,7 +86,7 @@ class Device {
   }
   async pullPage(limit?: number): Promise<PullResponse> {
     const query = new URLSearchParams({ ...(this.cursor ? { cursor: this.cursor } : {}), ...(limit ? { limit: String(limit) } : {}) });
-    const response = await app.inject({ method: 'GET', url: `/api/sync/pull?${query}`, headers: { cookie: this.cookie } });
+    const response = await app.inject({ method: 'GET', url: `/api/sync/pull?${query}`, headers: { cookie: this.cookie, ...(await this.accountHeader()) } });
     expect(response.statusCode, response.body).toBe(200);
     const body = pullResponseSchema.parse(response.json());
     if (body.status === 'resync_required') return body;
@@ -591,6 +596,23 @@ describe('HTTP: 401/403/409/5xx, payload, zgadywanie ID i list_id', () => {
     expect(count('SELECT count(*) AS n FROM notes')).toBe(0);
   });
 
+  it('409 account_mismatch: żądanie sync musi wskazać konto sesji tego samego żądania', async () => {
+    const { a, b } = await devices();
+    const body = { protocolVersion: 1, deviceId: a.deviceId, mutations: [create('note', note('Prywatna A', 'treść A'), 'private')] };
+    // Queue of A sent with B's cookie (cookie switched by a sign-in in another tab).
+    const pushWithB = await app.inject({ method: 'POST', url: '/api/sync/push', headers: { ...json, cookie: b.cookie, [SYNC_ACCOUNT_HEADER]: A_ID }, payload: body });
+    expect([pushWithB.statusCode, pushWithB.json()]).toEqual([409, { error: 'account_mismatch' }]);
+    const noHeader = await app.inject({ method: 'POST', url: '/api/sync/push', headers: { ...json, cookie: a.cookie }, payload: body });
+    expect([noHeader.statusCode, noHeader.json()]).toEqual([409, { error: 'account_mismatch' }]);
+    expect(count('SELECT count(*) AS n FROM notes')).toBe(0);
+    expect(count('SELECT count(*) AS n FROM mutation_receipts')).toBe(0);
+    // Pull of B's data into A's database is refused the same way.
+    const pullWithB = await app.inject({ method: 'GET', url: '/api/sync/pull', headers: { cookie: b.cookie, [SYNC_ACCOUNT_HEADER]: A_ID } });
+    expect([pullWithB.statusCode, pullWithB.json()]).toEqual([409, { error: 'account_mismatch' }]);
+    // Bound correctly: accepted.
+    expect((await a.push(...body.mutations)).map((r) => r.status)).toEqual(['ack']);
+  });
+
   it('błędny payload: 400 dla koperty, 413 ponad limit, element z błędem nie blokuje pozostałych', async () => {
     const { a } = await devices();
     const ok = create('note', note('Poprawna'), 'private');
@@ -620,7 +642,7 @@ describe('HTTP: 401/403/409/5xx, payload, zgadywanie ID i list_id', () => {
     expect(results.map((r) => r.status === 'error' ? r.code : r.status)).toEqual(['validation_error', 'validation_error', 'validation_error', 'ack']);
     // Pull query validation.
     for (const query of ['limit=0', 'limit=201', 'limit=abc', 'cursor=']) {
-      expect((await app.inject({ method: 'GET', url: `/api/sync/pull?${query}`, headers: { cookie: a.cookie } })).statusCode).toBe(400);
+      expect((await app.inject({ method: 'GET', url: `/api/sync/pull?${query}`, headers: { cookie: a.cookie, ...(await a.accountHeader()) } })).statusCode).toBe(400);
     }
   });
 
