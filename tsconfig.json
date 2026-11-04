@@ -16,5 +16,6 @@
     "types": ["node", "vite/client"],
     "customConditions": ["development"]
   },
-  "include": ["apps", "packages", "tests", "*.ts"]
+  "include": ["apps", "packages", "tests", "*.ts"],
+  "exclude": ["node_modules", "**/dist"]
 }

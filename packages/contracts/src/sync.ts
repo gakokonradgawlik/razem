@@ -8,6 +8,10 @@ export const MAX_PUSH_BATCH = 100;
 export const MAX_PULL_PAGE = 200;
 export const RETENTION_DAYS = 90;
 export const TRASH_DAYS = 30;
+/** Max JSON body of one push request; the client splits its outbox into batches below it. */
+export const MAX_PUSH_BYTES = 1024 * 1024;
+/** Soft byte budget of one pull page; a page always carries at least one change. */
+export const MAX_PULL_PAGE_BYTES = 1024 * 1024;
 const baseVersion = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 const identity = { clientMutationId: idSchema, entityId: idSchema };
 
@@ -44,6 +48,20 @@ export const pushRequestSchema = z.strictObject({
     ctx.addIssue({ code: 'custom', message: 'Powtórzone ID mutacji w partii' });
 });
 
+/**
+ * Server-side envelope: mutations are validated one by one so a single malformed element
+ * yields its own validation_error instead of blocking the whole outbox. Identity fields
+ * must parse to correlate the result; otherwise the request is rejected as a whole.
+ */
+export const pushEnvelopeSchema = z.strictObject({
+  protocolVersion: z.number().int(), deviceId: idSchema,
+  mutations: z.array(z.looseObject({ clientMutationId: idSchema, entityType: entityTypeSchema, entityId: idSchema }))
+    .min(1).max(MAX_PUSH_BATCH),
+}).superRefine((request, ctx) => {
+  if (new Set(request.mutations.map((m) => m.clientMutationId)).size !== request.mutations.length)
+    ctx.addIssue({ code: 'custom', message: 'Powtórzone ID mutacji w partii' });
+});
+
 export const tombstoneSchema = z.strictObject({
   entityType: entityTypeSchema, id: idSchema, version: baseVersion, deletedAt: instantSchema,
 });
@@ -57,7 +75,9 @@ export const mutationResultSchema = z.discriminatedUnion('status', [
   z.strictObject({ ...resultIdentity, status: z.literal('conflict'), state: serverStateSchema }),
   // Access failures disclose no record, version or existence. No user content in messages.
   z.strictObject({ ...resultIdentity, status: z.literal('error'), code: z.enum([
-    'validation_error', 'not_found', 'mutation_id_reused', 'dependency_failed', 'upgrade_required',
+    // already_exists: another record holds the same natural key (task occurrence of the same
+    // day); the client drops its copy and adopts the server one from pull.
+    'validation_error', 'not_found', 'mutation_id_reused', 'dependency_failed', 'upgrade_required', 'already_exists',
   ]), retryable: z.literal(false) }),
 ]).superRefine((result, ctx) => {
   if (result.status === 'error') return;

@@ -281,9 +281,54 @@ CREATE TABLE reminder_dispatches (
 CREATE INDEX reminder_dispatches_due ON reminder_dispatches(state, next_attempt_at);
 `;
 
+const domainTableNames: Array<[string, string]> = [
+  ['shopping_list', 'shopping_lists'], ['shopping_item', 'shopping_items'], ['task', 'tasks'],
+  ['task_occurrence', 'task_occurrences'], ['calendar_event', 'calendar_events'], ['important_date', 'important_dates'],
+  ['note', 'notes'], ['reminder', 'reminders'],
+];
+
+// RAZ-4: tombstones of records purged from the 30-day trash, sync state (cursor key and
+// journal retention floor), and indexes for retention jobs. Tombstones keep ACL metadata
+// only, never content, and block re-inserting a purged ID (no resurrection by old phones).
+const syncServer = `
+CREATE TABLE tombstones (
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('shopping_list', 'shopping_item', 'task', 'task_occurrence', 'calendar_event', 'important_date', 'note', 'reminder')),
+  id TEXT NOT NULL CHECK (length(id) = 36),
+  household_id TEXT NOT NULL REFERENCES households(id),
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  visibility TEXT NOT NULL CHECK (visibility IN ('private', 'shared')),
+  version INTEGER NOT NULL CHECK (version >= 1),
+  deleted_at TEXT NOT NULL,
+  purged_at TEXT NOT NULL,
+  PRIMARY KEY (entity_type, id)
+) STRICT;
+CREATE INDEX tombstones_acl ON tombstones(household_id, visibility, owner_id);
+CREATE TRIGGER tombstones_immutable BEFORE UPDATE ON tombstones
+BEGIN SELECT RAISE(ABORT, 'immutable_field'); END;
+${domainTableNames.map(([type, table]) => `
+CREATE TRIGGER ${table}_not_tombstoned BEFORE INSERT ON ${table}
+WHEN EXISTS (SELECT 1 FROM tombstones WHERE entity_type = '${type}' AND id = NEW.id)
+BEGIN SELECT RAISE(ABORT, 'tombstoned'); END;
+CREATE INDEX ${table}_trash ON ${table}(deleted_at) WHERE deleted_at IS NOT NULL;`).join('')}
+
+-- Single row. cursor_key: random 256-bit key generated in the database at install time;
+-- encrypts and authenticates pull cursors. journal_floor: highest pruned journal sequence.
+CREATE TABLE sync_state (
+  id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+  cursor_key TEXT NOT NULL CHECK (length(cursor_key) = 64),
+  journal_floor INTEGER NOT NULL CHECK (journal_floor >= 0)
+) STRICT;
+INSERT INTO sync_state (id, cursor_key, journal_floor) VALUES (1, lower(hex(randomblob(32))), 0);
+CREATE TRIGGER sync_state_floor_monotonic BEFORE UPDATE OF journal_floor ON sync_state
+WHEN NEW.journal_floor < OLD.journal_floor
+BEGIN SELECT RAISE(ABORT, 'floor_must_increase'); END;
+CREATE INDEX sync_changes_changed ON sync_changes(changed_at);
+`;
+
 export const migrations: readonly Migration[] = [
   { version: 1, name: 'accounts_sessions', sql: accounts },
   { version: 2, name: 'domain_sync_push', sql: domain },
+  { version: 3, name: 'sync_tombstones_state', sql: syncServer },
 ];
 export const LATEST_SCHEMA_VERSION = migrations.length;
 

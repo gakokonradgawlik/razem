@@ -213,7 +213,7 @@ describe('logowanie i sesje', () => {
     expect(own).not.toBe(temp);
     expect((await get(app, '/api/me', temp)).statusCode).toBe(401);
     expect((await get(app, '/api/me', otherDevice)).statusCode).toBe(401);
-    expect((await get(app, '/api/sync/pull', own)).statusCode).toBe(404); // authenticated; sync arrives in RAZ-4
+    expect((await get(app, '/api/sync/pull', own)).statusCode).toBe(200); // authenticated with own password (RAZ-4)
     expect((await login(app, 'a@example.test', TEMP_A)).statusCode).toBe(401);
     expect((await login(app, 'A@EXAMPLE.TEST', OWN_A)).statusCode).toBe(200);
   });
