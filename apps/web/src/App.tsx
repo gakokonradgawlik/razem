@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ComponentType } from 'react';
-import { Link, ParamsProvider, matchPath, usePath } from './router.js';
+import { Link, ParamsProvider, matchPath, navigate, usePath } from './router.js';
 import type { Params } from './router.js';
 import { Icon, BrandMark } from './ui/icons.js';
 import type { IconName } from './ui/icons.js';
@@ -19,6 +19,7 @@ import {
 } from './screens/More.js';
 import { InstallScreen, SettingsScreen } from './screens/Settings.js';
 import { ChangePasswordScreen, LoginScreen } from './screens/Auth.js';
+import { ChangesScreen, ConflictScreen, changePaths } from './screens/Changes.js';
 
 type Tab = 'today' | 'shopping' | 'tasks' | 'calendar' | 'more';
 export type Route = { path: string; title: string; tab: Tab; screen: ComponentType; chrome?: 'none' };
@@ -60,6 +61,8 @@ export const routes: Route[] = [
   { path: '/ustawienia', title: 'Ustawienia', tab: 'more', screen: SettingsScreen },
   { path: '/ustawienia/instalacja', title: 'Instalacja na iPhonie', tab: 'more', screen: InstallScreen },
   { path: '/ustawienia/haslo', title: 'Zmiana hasła', tab: 'more', screen: ChangePasswordScreen },
+  { path: changePaths.list, title: 'Zmiany do sprawdzenia', tab: 'more', screen: ChangesScreen },
+  { path: changePaths.conflict, title: 'Konflikt', tab: 'more', screen: ConflictScreen },
   { path: '/logowanie', title: 'Logowanie', tab: 'more', screen: LoginScreen, chrome: 'none' },
 ];
 
@@ -87,6 +90,12 @@ export function App({ services = unavailableServices }: { services?: AppServices
   useTheme();
   useKeyboardInset();
   const first = useRef(true);
+  const mustChange = services.session?.mustChangePassword === true;
+
+  useEffect(() => {
+    // A temporary password allows nothing but setting an own one (server rule, RAZ-2).
+    if (mustChange && path !== '/ustawienia/haslo') navigate('/ustawienia/haslo', { replace: true });
+  }, [mustChange, path]);
 
   useEffect(() => {
     document.title = route.title === 'Dzisiaj' ? 'Razem' : `${route.title} · Razem`;

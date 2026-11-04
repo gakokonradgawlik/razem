@@ -35,7 +35,8 @@ it('każdy ekran MVP (także szczegóły i edycja) ma polski tytuł; bez magazyn
     const heading = screen.getByRole('heading', { level: 1 });
     expect(heading.textContent?.length).toBeGreaterThan(0);
     expect(document.title).toContain(route.path === '/' ? 'Razem' : route.title);
-    if (route.path.includes(':')) expect(await screen.findByText('Nie można wyświetlić wpisu')).toBeTruthy();
+    if (route.path === '/zmiany/:conflictId') expect(await screen.findByText('Ten konflikt jest już rozwiązany')).toBeTruthy();
+    else if (route.path.includes(':')) expect(await screen.findByText('Nie można wyświetlić wpisu')).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/\b(undefined|null|NaN|api\/|TODO|lorem)\b/i);
   }
   for (const path of ['/zakupy', '/zadania', '/kalendarz', '/notatki', '/wazne-daty']) {
@@ -43,7 +44,7 @@ it('każdy ekran MVP (także szczegóły i edycja) ma polski tytuł; bez magazyn
     await waitFor(() => expect(screen.getAllByRole('link').some((link) => link.classList.contains('button'))).toBe(true));
   }
   go('/kosz');
-  expect(screen.getByText('Kosz jest pusty')).toBeTruthy();
+  expect(await screen.findByText('Kosz jest pusty')).toBeTruthy();
   go('/nie-ma-takiej');
   expect(screen.getByRole('heading', { level: 1, name: 'Nie znaleziono' })).toBeTruthy();
 });
@@ -202,10 +203,11 @@ it('status synchronizacji nie udaje synchronizacji bez sesji i rozpoznaje offlin
   expect(screen.getByRole('status').textContent).toBe('Nie zalogowano');
   cleanup();
   render(<App services={{ ...unavailableServices, pendingChanges: 3 }} />);
-  expect(screen.getByRole('status').textContent).toBe('Zaloguj się, aby wysłać zmiany');
+  expect(screen.getByRole('status').textContent).toBe('Zaloguj się, aby wysłać zmiany (3)Zaloguj się');
+  expect(within(screen.getByRole('status')).getByRole('link', { name: 'Zaloguj się' }).getAttribute('href')).toBe('/logowanie');
   const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
   act(() => { window.dispatchEvent(new Event('offline')); });
-  expect(screen.getByRole('status').textContent).toBe('Offline');
+  expect(screen.getByRole('status').textContent).toBe('Offline · zmiany czekają na wysłanie (3)');
   online.mockRestore();
 });
 

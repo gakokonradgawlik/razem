@@ -297,3 +297,19 @@ input[type="search"].input { -webkit-appearance: none; appearance: none; }
 .check input:checked::after { content: ""; width: 10px; height: 5px; border: solid var(--on-accent); border-width: 0 0 2px 2px; transform: translateY(-1px) rotate(-45deg); }
 .check input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .row__title--done { color: var(--text-secondary); text-decoration: line-through; }
+
+/* RAZ-5: sync status actions, conflicts, trash */
+.sync-badge__action { display: inline-flex; align-items: center; min-height: 44px; margin: -6px -4px -6px 4px; padding: 0 8px; color: var(--accent); font-weight: 600; text-decoration: none; }
+.row--stack { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.row--stack .row__text { flex: 1 1 12rem; min-width: 0; }
+.actions--stack { flex-direction: column; align-items: stretch; }
+.actions--stack .button { width: 100%; }
+.compare { display: grid; gap: 0; }
+@media (min-width: 48rem) { .compare { grid-template-columns: 1fr 1fr; gap: 16px; } }
+.compare__empty { padding: 12px 0; color: var(--text-secondary); }
+.details__row--changed dt { font-weight: 600; color: var(--text); }
+.details__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.merge-field { border: 0; margin: 0 0 16px; padding: 0; min-width: 0; }
+.merge-field__choices { display: grid; gap: 4px; }
+.merge-field__choice { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; overflow-wrap: anywhere; }
+.merge-field__choice input { width: 22px; height: 22px; flex: none; margin: 0; accent-color: var(--accent); }
