@@ -109,7 +109,7 @@ function TaskDetail({ task, reload }: { task: Task; reload: () => void }) {
       <Section>
         {failure && <Notice tone="danger" role="alert">{failure}</Notice>}
         {task.data.recurrence
-          ? <p className="section__footer">Powtarzające się zadanie odhacza się dla pojedynczego terminu na liście zadań.</p>
+          ? <p className="section__footer">Odhaczanie pojedynczych terminów powtarzanego zadania nie jest jeszcze dostępne w tej wersji aplikacji.</p>
           : <Button variant={done ? 'tinted' : 'filled'} className={`button button--${done ? 'tinted' : 'filled'} button--block`} onClick={toggle}>{done ? 'Przywróć do zrobienia' : 'Oznacz jako ukończone'}</Button>}
       </Section>
       <Section><DeleteRecord entityType="task" record={task} what="zadanie" doneTo="/zadania" /></Section>

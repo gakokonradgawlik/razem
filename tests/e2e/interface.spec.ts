@@ -2,13 +2,13 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { routes } from '../../apps/web/src/App.js';
 
 // Screens of the RAZ-3 skeleton. Built app served by the real Fastify server.
-const screens = [
-  '/', '/zakupy', '/zakupy/nowa', '/zadania', '/zadania/nowe', '/kalendarz', '/kalendarz/nowe', '/wiecej',
-  '/notatki', '/notatki/nowa', '/wazne-daty', '/wazne-daty/nowa', '/kosz', '/ustawienia', '/ustawienia/instalacja',
-  '/ustawienia/haslo', '/logowanie',
-];
+// Every route pattern of App.tsx; parameters filled with a syntactically valid id
+// (production build has no record store yet → "Nie można wyświetlić wpisu").
+const SAMPLE = '0b6f5a62-3c1d-4e8f-9a7b-1c2d3e4f5a6b';
+const screens = routes.map((route) => route.path.replace(/:\w+/g, SAMPLE));
 const widths = [375, 390, 430, 1280];
 // Optional visual evidence: RAZEM_SCREENSHOTS=/some/tmp/dir (not committed).
 const shots = process.env.RAZEM_SCREENSHOTS;
@@ -40,6 +40,8 @@ async function layoutProblems(page: Page) {
 
 for (const width of widths) {
   test(`${width}px: wszystkie ekrany bez poziomego scrolla, cele ≥44 px, nazwy kontrolek`, async ({ page }, info) => {
+    // ~35 routes per width; WebKit is slow under parallel load.
+    test.setTimeout(180_000);
     await page.setViewportSize({ width, height: width > 900 ? 860 : 844 });
     for (const path of screens) {
       await page.goto(path);
@@ -83,6 +85,7 @@ test('nawigacja: pasek na dole na telefonie, boczny na desktopie, te same pozycj
 });
 
 test('ciemny motyw, ograniczony ruch i duży tekst nie psują obsługi', async ({ page }) => {
+  test.setTimeout(180_000);
   await page.setViewportSize({ width: 375, height: 812 });
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await page.goto('/');
