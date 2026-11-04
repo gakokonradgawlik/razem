@@ -21,7 +21,7 @@ Lista tras do sprawdzenia nie jest wyliczana ręcznie: testy biorą ją z `route
 | `npm run test:e2e` | PASS 33, 1 pominięty (safe-area przez CDP działa tylko w Chromium; w WebKit pominięty) |
 
 E2E (`tests/e2e/interface.spec.ts`, Chromium desktop + WebKit z profilem iPhone 13, `pl-PL`, Europe/Warsaw):
-- wszystkie trasy z `App.tsx` (35, parametry wypełnione UUID; w buildzie produkcyjnym szczegóły pokazują stan „Nie można wyświetlić wpisu”) × szerokości 375/390/430/1280: brak poziomego scrolla, każdy widoczny cel ≥44×44 px
+- wszystkie trasy z `App.tsx` (29, parametry wypełnione UUID; w buildzie produkcyjnym szczegóły pokazują stan „Nie można wyświetlić wpisu”) × szerokości 375/390/430/1280: brak poziomego scrolla, każdy widoczny cel ≥44×44 px
   (dla radio/checkbox — etykieta), każda kontrolka ma dostępną nazwę, pola ≥16 px; także po walidacji i w widoku miesiąca.
 - Duży tekst (root 200 %) na wszystkich trasach przy 375 px, ciemny motyw (systemowy i wybrany),
   `prefers-reduced-motion` (menu bez animacji), zapamiętanie motywu po przeładowaniu.
@@ -37,7 +37,7 @@ E2E (`tests/e2e/interface.spec.ts`, Chromium desktop + WebKit z profilem iPhone 
 - Testy jednostkowe (`screens/records.test.tsx`): osiągalność lista → szczegóły → edycja dla wszystkich typów, patch tylko ze
   zmienionymi polami i `baseVersion`, brak zapisu bez zmian, pozycja bez własnej widoczności, pozycja z innej listy
   i cudzy wpis jako „Nie znaleziono wpisu” bez treści i działań, nieudane odhaczenie/usunięcie zgłoszone, dane niezgodne
-  z kontraktem nie są wyświetlane, przypisanie zadania względem oglądającego, wyszukiwanie notatek bez polskich znaków.
+  z kontraktem nie są wyświetlane, przypisanie zadania względem oglądającego (szczegóły i edycja cudzego zadania z `assignee` self/partner, brak patcha przypisania przy zmianie tytułu, poprawny patch po wyborze Ja/Druga osoba), wyszukiwanie notatek bez polskich znaków.
 - Kontrast tokenów (jasny i oba warianty ciemnego) liczony wzorem WCAG w `ui/ui.test.ts`: tekst ≥4,5:1, obramowania i ikony ≥3:1.
 
 ## Kontrola wizualna

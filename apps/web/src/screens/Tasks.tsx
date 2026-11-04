@@ -27,11 +27,9 @@ const emptyCopy: Record<Filter, { title: string; text: string }> = {
 
 /** "Ja/Druga osoba" are relative to the record owner; translate them for the viewer. */
 export function assigneeLabel(task: Task): string {
-  const { assignee } = task.data;
-  if (assignee === 'both') return 'Oboje';
-  return (assignee === 'self') === task.mine ? 'Ja' : 'Druga osoba';
+  return { me: 'Ja', other: 'Druga osoba', both: 'Oboje' }[assigneeForViewer(task.data.assignee, task.mine)];
 }
-const assignedToMe = (task: Task) => task.data.assignee === 'both' || (task.data.assignee === 'self') === task.mine;
+const assignedToMe = (task: Task) => assigneeForViewer(task.data.assignee, task.mine) !== 'other';
 function dueLabel(task: Task): string | undefined {
   if (task.data.dueAt) return formatInstant(task.data.dueAt);
   return task.data.dueDate ? formatIsoDate(task.data.dueDate) : undefined;
@@ -118,15 +116,25 @@ function TaskDetail({ task, reload }: { task: Task; reload: () => void }) {
 }
 
 type Assignee = 'self' | 'partner' | 'both';
+/** Assignee as the viewer sees it. The contract's 'self'/'partner' are relative to the record owner. */
+type ViewerAssignee = 'me' | 'other' | 'both';
+export function assigneeForViewer(assignee: Assignee, mine: boolean): ViewerAssignee {
+  if (assignee === 'both') return 'both';
+  return (assignee === 'self') === mine ? 'me' : 'other';
+}
+export function assigneeForRecord(value: ViewerAssignee, mine: boolean): Assignee {
+  if (value === 'both') return 'both';
+  return (value === 'me') === mine ? 'self' : 'partner';
+}
 type Repeat = 'none' | 'daily' | 'weekly' | 'monthly';
-type TaskForm = { title: string; description: string; visibility: Visibility; assignee: Assignee; dueDate: string; dueTime: string; repeat: Repeat };
+type TaskForm = { title: string; description: string; visibility: Visibility; assignee: ViewerAssignee; dueDate: string; dueTime: string; repeat: Repeat };
 
 function initialTask(mode: FormMode<'task'>): TaskForm {
   if (mode.kind === 'create') return { title: '', description: '', visibility: defaultVisibility('task'), assignee: 'both', dueDate: '', dueTime: '', repeat: 'none' };
-  const { data, visibility } = mode.record;
+  const { data, visibility, mine } = mode.record;
   const local = data.dueAt ? instantToLocal(data.dueAt, data.timezone) : null;
   return {
-    title: data.title, description: data.description, visibility, assignee: data.assignee,
+    title: data.title, description: data.description, visibility, assignee: assigneeForViewer(data.assignee, mine),
     dueDate: local?.date ?? data.dueDate ?? '', dueTime: local?.time ?? '', repeat: data.recurrence?.frequency ?? 'none',
   };
 }
@@ -138,13 +146,13 @@ function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
   const [errors, setErrors] = useState<Errors<TaskForm>>({});
   const back = editing ? pathFor(taskPaths.detail, { taskId: editing.id }) : '/zadania';
   const changeVisibility = (visibility: Visibility) =>
-    setValues((current) => ({ ...current, visibility, assignee: visibility === 'private' ? 'self' : current.assignee }));
+    setValues((current) => ({ ...current, visibility, assignee: visibility === 'private' ? 'me' : current.assignee }));
 
   const validate = (): Errors<TaskForm> => ({
     title: requiredText(values.title, 'tytuł zadania'),
     description: maxText(values.description, 50_000),
     dueDate: values.dueTime && !values.dueDate ? 'Godzina wymaga dnia.' : values.repeat !== 'none' && !values.dueDate ? 'Powtarzanie wymaga terminu.' : undefined,
-    assignee: values.visibility === 'private' && values.assignee !== 'self' ? 'Prywatne zadanie można przypisać tylko sobie.' : undefined,
+    assignee: values.visibility === 'private' && values.assignee !== 'me' ? 'Prywatne zadanie można przypisać tylko sobie.' : undefined,
   });
   const submit = () => {
     const timezone = editing?.data.timezone ?? DEFAULT_TIMEZONE;
@@ -154,7 +162,7 @@ function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
     // Keep an existing interval (e.g. every 2 weeks) when only other fields change.
     const interval = previous && previous.frequency === values.repeat ? previous.interval : 1;
     const data = contractData('task', {
-      title: values.title.trim(), description: values.description, assignee: values.assignee,
+      title: values.title.trim(), description: values.description, assignee: assigneeForRecord(values.assignee, editing?.mine ?? true),
       dueDate: dueAt ? null : startDate, dueAt, timezone, completedAt: editing?.data.completedAt ?? null,
       recurrence: values.repeat === 'none' || !startDate ? null : { frequency: values.repeat, interval, startDate },
     });
@@ -169,9 +177,9 @@ function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
       </div>
       <div className="group">
         {editing ? <FixedPrivacy value={editing.visibility} /> : <PrivacyPicker subject="to zadanie" value={values.visibility} onChange={changeVisibility} />}
-        <SelectField<Assignee> label="Kto to zrobi?" value={values.assignee} onValue={set('assignee')} error={errors.assignee}
+        <SelectField<ViewerAssignee> label="Kto to zrobi?" value={values.assignee} onValue={set('assignee')} error={errors.assignee}
           hint={values.visibility === 'private' ? 'Prywatne zadanie możesz przypisać tylko sobie.' : undefined}
-          options={[{ value: 'self', label: 'Ja' }, { value: 'partner', label: 'Druga osoba', disabled: values.visibility === 'private' }, { value: 'both', label: 'Oboje', disabled: values.visibility === 'private' }]} />
+          options={[{ value: 'me', label: 'Ja' }, { value: 'other', label: 'Druga osoba', disabled: values.visibility === 'private' }, { value: 'both', label: 'Oboje', disabled: values.visibility === 'private' }]} />
       </div>
       <div className="group">
         <div className="field-row">

@@ -87,8 +87,8 @@ it('wybór prywatności: domyślnie notatka „Tylko ja”, zadanie i lista „W
   go('/zadania/nowe');
   fireEvent.click(screen.getByRole('radio', { name: /Tylko ja/ }));
   const assignee = screen.getByRole('combobox', { name: 'Kto to zrobi?' }) as HTMLSelectElement;
-  expect(assignee.value).toBe('self');
-  expect([...assignee.options].filter((option) => !option.disabled).map((option) => option.value)).toEqual(['self']);
+  expect(assignee.value).toBe('me');
+  expect([...assignee.options].filter((option) => !option.disabled).map((option) => option.value)).toEqual(['me']);
 });
 
 it('walidacja pokazuje błąd przy polu, przenosi fokus i nie wywołuje zapisu', async () => {

@@ -188,6 +188,32 @@ it('zadania: lista → szczegóły → edycja; przypisanie względem właścicie
   await waitFor(() => expect(window.location.pathname).toBe(`/zadania/${TASK}`));
 });
 
+// Contract 'self'/'partner' is relative to the owner; the viewer of a partner's task sees it swapped.
+it.each([
+  { stored: 'self', shown: 'Druga osoba', value: 'other', pick: 'me', patched: 'partner' },
+  { stored: 'partner', shown: 'Ja', value: 'me', pick: 'other', patched: 'self' },
+] as const)('zadania: wspólne zadanie drugiej osoby z assignee=$stored — szczegóły i edycja zgodne, patch tylko po świadomym wyborze', async ({ stored, shown, value, pick, patched }) => {
+  const task = rec(PARTNER_TASK, 'task', { title: 'Odebrać paczkę', description: '', assignee: stored, dueDate: null, dueAt: null, timezone: 'Europe/Warsaw', completedAt: null, recurrence: null }, { mine: false });
+  const services = memoryServices([task]);
+  render(<App services={services} />);
+  go(`/zadania/${PARTNER_TASK}`);
+  expect(await screen.findByText(shown)).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('link', { name: 'Edytuj' }));
+  const assignee = await screen.findByRole('combobox', { name: 'Kto to zrobi?' }) as HTMLSelectElement;
+  expect(assignee.value).toBe(value);
+  expect(assignee.selectedOptions[0]?.textContent).toBe(shown);
+  fireEvent.change(screen.getByLabelText('Tytuł'), { target: { value: 'Odebrać paczkę z paczkomatu' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  await waitFor(() => expect(services.updateRecord).toHaveBeenLastCalledWith({ entityType: 'task', id: PARTNER_TASK, baseVersion: 3, patch: { title: 'Odebrać paczkę z paczkomatu' } }));
+  await waitFor(() => expect(window.location.pathname).toBe(`/zadania/${PARTNER_TASK}`));
+
+  go(`/zadania/${PARTNER_TASK}/edycja`);
+  fireEvent.change(await screen.findByRole('combobox', { name: 'Kto to zrobi?' }), { target: { value: pick } });
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  await waitFor(() => expect(services.updateRecord).toHaveBeenLastCalledWith({ entityType: 'task', id: PARTNER_TASK, baseVersion: 3, patch: { assignee: patched } }));
+});
+
 it('kalendarz: agenda → szczegóły → edycja wydarzenia całodniowego (koniec włącznie w formularzu)', async () => {
   const services = memoryServices();
   render(<App services={services} />);
