@@ -129,6 +129,16 @@ export const reminderDispatches = sqliteTable('reminder_dispatches', {
   leaseUntil: text('lease_until'), sentAt: text('sent_at'),
 });
 
+export const tombstones = sqliteTable('tombstones', {
+  entityType: text('entity_type').notNull(), id: text('id').notNull(),
+  householdId: text('household_id').notNull(), ownerId: text('owner_id').notNull(),
+  visibility: text('visibility', { enum: ['private', 'shared'] }).notNull(),
+  version: integer('version').notNull(), deletedAt: text('deleted_at').notNull(), purgedAt: text('purged_at').notNull(),
+}, (t) => [primaryKey({ columns: [t.entityType, t.id] })]);
+export const syncState = sqliteTable('sync_state', {
+  id: integer('id').primaryKey(), cursorKey: text('cursor_key').notNull(), journalFloor: integer('journal_floor').notNull(),
+});
+
 export const domainTables = {
   shopping_list: shoppingLists, shopping_item: shoppingItems, task: tasks, task_occurrence: taskOccurrences,
   calendar_event: calendarEvents, important_date: importantDates, note: notes, reminder: reminders,

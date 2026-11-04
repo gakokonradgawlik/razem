@@ -13,6 +13,7 @@ const webRoot = settings.production ? fileURLToPath(new URL('../../web/dist', im
 const app = await buildApp({
   database, ...(webRoot ? { webRoot } : {}), secureCookies: settings.secureCookies, trustProxy: settings.trustProxy,
   ...(settings.publicOrigin ? { publicOrigin: settings.publicOrigin } : {}), auth: { argon2: argon2ParamsFromEnv() },
+  maintenanceIntervalMs: 60 * 60 * 1000,
 });
 let stopping = false;
 async function stop() {
