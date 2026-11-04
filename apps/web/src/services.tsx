@@ -158,8 +158,10 @@ function useOnline(): boolean {
 export function useSyncState(): SyncState {
   const { session, pendingChanges, syncState } = useServices();
   const online = useOnline();
-  const urgent = syncState && ['conflict', 'storage_full', 'storage_unavailable', 'update_required', 'signed_out'].includes(syncState.kind);
-  if (!online && !urgent) return pendingChanges > 0 ? { kind: 'offline', pending: pendingChanges } : { kind: 'offline' };
+  // With a session the coordinator's state is the truth (it tried the server); navigator.onLine
+  // alone neither proves nor disproves that the server is reachable.
+  if (session && syncState) return syncState;
+  if (!online) return pendingChanges > 0 ? { kind: 'offline', pending: pendingChanges } : { kind: 'offline' };
   if (!session) return pendingChanges > 0 ? { kind: 'signed_out', pending: pendingChanges } : { kind: 'not_connected' };
   return syncState ?? (pendingChanges > 0 ? { kind: 'pending', count: pendingChanges } : { kind: 'connecting' });
 }

@@ -17,6 +17,12 @@ export default defineConfig({
     reuseExistingServer: false,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
   }, {
+    // Signed-in offline/sync scenarios (tests/e2e/offline.spec.ts), synthetic accounts.
+    command: 'node tests/start-sync-server.mjs',
+    url: 'http://127.0.0.1:4319/readyz',
+    reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
+  }, {
     // Test-only fixture app (synthetic records) for detail/edit screens with content.
     command: 'node node_modules/vite/bin/vite.js --config apps/web/vite.fixtures.config.ts',
     url: 'http://127.0.0.1:4318/',

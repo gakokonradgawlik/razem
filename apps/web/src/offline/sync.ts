@@ -31,7 +31,7 @@ export type EngineOptions = {
   pushBytes?: number;
 };
 
-export type CycleOutcome = 'done' | 'skipped_locked' | 'skipped_offline' | 'failed';
+export type CycleOutcome = 'done' | 'skipped_locked' | 'failed';
 
 export class SyncEngine {
   private running: Promise<CycleOutcome> | null = null;
@@ -102,7 +102,8 @@ export class SyncEngine {
   }
 
   private async cycle(): Promise<CycleOutcome> {
-    if (!this.online()) { await this.setStatus({ connection: 'offline' }); return 'skipped_offline'; }
+    // navigator.onLine is only a hint (it can be wrong both ways): always try the real
+    // server; "offline" is reported when the attempt fails and the device says it has no network.
     try {
       const result = await this.withLock(() => this.exchange());
       if (result === 'locked') return 'skipped_locked';
@@ -118,7 +119,8 @@ export class SyncEngine {
     const connection: Connection = kind === 'authentication_required' ? 'auth_required'
       : kind === 'password_change_required' ? 'password_change'
         : kind === 'upgrade_required' ? 'upgrade_required'
-          : !this.online() ? 'offline' : 'server_unavailable';
+          // An HTTP answer (5xx, proxy page) proves the network works: the server is the problem.
+          : (kind === 'network' || kind === 'timeout') && !this.online() ? 'offline' : 'server_unavailable';
     this.failures += 1;
     // Exponential backoff with jitter for periodic retries: 2 s, 4 s, … up to 5 min.
     const delay = Math.min(300_000, 2_000 * 2 ** Math.min(this.failures - 1, 10));
