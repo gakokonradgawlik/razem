@@ -16,7 +16,7 @@ Argon2id z `node:crypto`). Dane wyłącznie syntetyczne.
   trigger blokujący wskrzeszenie). Kontrakty: `pushEnvelopeSchema`, limity bajtowe, nowe kody.
 - Opis działania: architecture/sync.md, sekcja „Implementacja serwera RAZ-4”.
 
-## Testy (`npm test`: 12 plików, 98 testów, wszystkie zaliczone; `npm run typecheck`, `npm run build` OK)
+## Testy (`npm test`: 12 plików, 99 testów, wszystkie zaliczone; `npm run typecheck`, `npm run build` OK)
 `apps/server/src/sync/sync.test.ts` – HTTP przez Fastify `inject`, plikowa baza SQLite WAL,
 dwa konta zalogowane hasłem, każde z własnym urządzeniem i lokalną kopią:
 - zbieżność wspólnych danych A↔B, równoległe edycje różnych rekordów, prywatne tylko u właściciela
@@ -39,6 +39,10 @@ dwa konta zalogowane hasłem, każde z własnym urządzeniem i lokalną kopią:
   retencja usuwa **cały** journal (rekordy domenowe zostają): świeży bootstrap z `limit=1`
   przechodzi 3 strony bez `resync_required`, kolejne pulle to puste delty, późniejszy zapis
   dociera deltą (regresja po review: wcześniej `maxSequence()` zwracał 0 < `journal_floor`);
+- (regresja po 2. review) nieaktualna edycja notatki z `body`/`title`/obydwoma równymi bieżącemu
+  stanowi → `conflict` bez nowej wersji; mieszany patch odhaczenie+nazwa elementu równy stanowi →
+  `conflict`; samo odhaczenie (`checked`, `completedAt` zadania) → `ack` v2, powtórzenie tej samej
+  mutacji odtwarza receipt. Wcześniej wyjątek obejmował dowolny patch równy stanowi;
 - HTTP: 401 bez/z podrobioną sesją, 403 obcy Origin i cross-site, 403 hasło tymczasowe, 415
   text/plain, 400 dla błędnej koperty (JSON, deviceId, 0/101 mutacji, duplikat ID, pole nadmiarowe),
   400 `upgrade_required`, 413 `payload_too_large`, błąd elementu nie blokuje partii, 400 dla
@@ -50,7 +54,7 @@ dwa konta zalogowane hasłem, każde z własnym urządzeniem i lokalną kopią:
 
 Testy mutacyjne (ręczne, kod przywrócony): usunięcie odtwarzania receipt, `mutation_id_reused`,
 blokady tombstone, kontynuacji od watermarku, ACL journala, wspólnej transakcji, paddingu cursora,
-watermarku z ACL, floor journala, `maxSequence()` bez `journal_floor` lub wymuszenie ack dla nieaktualnych zmian – każda zmiana
+watermarku z ACL, floor journala, `maxSequence()` bez `journal_floor`, wyjątek ACK dla dowolnego patcha równego stanowi lub wymuszenie ack dla nieaktualnych zmian – każda zmiana
 powoduje porażkę 1–4 testów.
 
 Smoke produkcyjnego buildu (`NODE_ENV=production node apps/server/dist/index.js`, tymczasowa

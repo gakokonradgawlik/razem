@@ -45,6 +45,12 @@ const parentOf: Partial<Record<EntityType, (data: Record<string, unknown>) => { 
   reminder: (data) => ({ type: entityTypeSchema.parse(data.targetType), id: data.targetId }),
 };
 const immutableDataKeys = ['listId', 'taskId', 'occurrenceKey', 'targetType', 'targetId'];
+/** Fields of an idempotent check-off; a stale patch touching only these may be acked if already applied. */
+const checkOffKeys: Partial<Record<EntityType, readonly string[]>> = {
+  shopping_item: ['checked'],
+  task: ['completedAt'],
+  task_occurrence: ['completedAt'],
+};
 
 export type RecordResult =
   | { status: 'ack'; record: SyncRecord }
@@ -230,11 +236,16 @@ export class RecordRepository {
   }
 
   update(scope: AccountScope, input: UpdateInput): RecordResult {
+    // Only a pure check-off (no content fields) may be acknowledged on a stale baseVersion when
+    // its effect is already the current state; any content edit with a stale base is a conflict.
     const noop = (current: SyncRecord) => {
       if (current.deletedAt !== null || typeof input.patch !== 'object' || input.patch === null) return false;
+      const allowed = checkOffKeys[current.entityType] ?? [];
+      const keys = Object.keys(input.patch);
+      if (keys.length === 0 || keys.some((key) => !allowed.includes(key))) return false;
       const patch = (dataSchemas[current.entityType] as z.ZodObject).partial().safeParse(input.patch);
       const data = current.data as Record<string, unknown>;
-      return patch.success && Object.keys(patch.data).length > 0
+      return patch.success && Object.keys(patch.data).length === keys.length
         && Object.entries(patch.data).every(([key, value]) => key in data && canonical(data[key]) === canonical(value));
     };
     return this.write(scope, input, (current) => {

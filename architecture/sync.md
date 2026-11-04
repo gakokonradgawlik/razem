@@ -49,9 +49,11 @@ Kod: `apps/server/src/sync/` (`service.ts`, `http.ts`), `packages/db/src/records
   receipt – klient rebase'uje je po rozwiązaniu konfliktu.
 - **Konflikty**: inna wersja niż baseVersion → wynik elementu `conflict` z aktualnym stanem
   widocznym dla konta (odpowiedź HTTP 200 dla partii; 409 jest semantyką elementu). Nie ma LWW
-  ani czasu klienta: `updatedAt` nadaje serwer. Wyjątek bez utraty danych: nieaktualna zmiana,
-  której efekt jest już stanem bieżącym (np. to samo odhaczenie na obu telefonach), dostaje
-  `ack` bez nowej wersji. Edycja rekordu w koszu → `conflict`; drugie wystąpienie zadania tego
+  ani czasu klienta: `updatedAt` nadaje serwer. Jedyny wyjątek: nieaktualny patch zawierający
+  **wyłącznie** pole odhaczenia (`shopping_item.checked`, `task.completedAt`,
+  `task_occurrence.completedAt`), którego wartość jest już stanem bieżącym (to samo odhaczenie na
+  obu telefonach), dostaje `ack` bez nowej wersji. Każda inna nieaktualna edycja – także treści
+  identycznej z bieżącą albo odhaczenia połączonego z polem treści – to `conflict`. Edycja rekordu w koszu → `conflict`; drugie wystąpienie zadania tego
   samego dnia → `already_exists` (jeden rekord na `(taskId, occurrenceKey)`).
 - **Kosz i tombstones**: delete ustawia `deletedAt` (rekord zostaje w koszu, w snapshot i delta,
   restore wersjonowane). Po 30 dniach zadanie retencji usuwa rekord **z dziećmi** i zapisuje

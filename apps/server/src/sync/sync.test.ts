@@ -303,6 +303,46 @@ describe('konflikty, usuwanie i tombstones', () => {
     expect(rename!.status).toBe('conflict');
   });
 
+  it('nieaktualna edycja treści równa bieżącemu stanowi to konflikt, nie ACK (tylko odhaczenie jest idempotentne)', async () => {
+    const { a, b } = await devices();
+    const shared = create('note', { title: 'T1', body: 'A' }, 'shared');
+    await a.push(shared);
+    await a.push(update('note', shared.entityId, 1, { title: 'T2', body: 'B' }));
+    // B edited on top of T1 and happened to type the same body – still a conflict.
+    const [body] = await b.push(update('note', shared.entityId, 1, { body: 'B' }));
+    expect(body).toMatchObject({ status: 'conflict', state: { record: { version: 2, data: { title: 'T2', body: 'B' } } } });
+    const [title] = await b.push(update('note', shared.entityId, 1, { title: 'T2' }));
+    expect(title!.status).toBe('conflict');
+    const [both] = await b.push(update('note', shared.entityId, 1, { title: 'T2', body: 'B' }));
+    expect(both!.status).toBe('conflict');
+    expect(sync.records.get(A, 'note', shared.entityId)!.version).toBe(2);
+
+    const list = create('shopping_list', { name: 'Lista' }, 'shared');
+    const milk = create('shopping_item', item(list.entityId));
+    await a.push(list, milk);
+    await a.push(update('shopping_item', milk.entityId, 1, { checked: true, name: 'Mleko 2%' }));
+    // Mixed check-off + content equal to the current state: conflict.
+    const [mixed] = await b.push(update('shopping_item', milk.entityId, 1, { checked: true, name: 'Mleko 2%' }));
+    expect(mixed).toMatchObject({ status: 'conflict', state: { record: { version: 2 } } });
+    // Pure check-off equal to the current state: idempotent ACK without a new version.
+    const checkOnly = update('shopping_item', milk.entityId, 1, { checked: true });
+    const [check] = await b.push(checkOnly);
+    expect(check).toMatchObject({ status: 'ack', state: { record: { version: 2 } } });
+    // Replay of the same mutation returns the stored receipt result.
+    const [replay] = await b.push(checkOnly);
+    expect(replay).toEqual(check);
+    expect(sync.records.get(A, 'shopping_item', milk.entityId)!.version).toBe(2);
+
+    // Task completion: same rule.
+    const task = create('task', { title: 'Śmieci', description: '', assignee: 'both', dueDate: null, dueAt: null,
+      timezone: 'Europe/Warsaw', completedAt: null, recurrence: null }, 'shared');
+    await a.push(task);
+    const done = '2026-01-02T10:00:00.000Z';
+    await a.push(update('task', task.entityId, 1, { completedAt: done }));
+    expect((await b.push(update('task', task.entityId, 1, { completedAt: done })))[0]!.status).toBe('ack');
+    expect((await b.push(update('task', task.entityId, 1, { completedAt: done, title: 'Śmieci' })))[0]!.status).toBe('conflict');
+  });
+
   it('usunięcie kontra edycja: konflikt z aktualnym stanem, bez wskrzeszenia; restore jako wersjonowana mutacja', async () => {
     const { a, b } = await devices();
     const shared = create('note', note('Do usunięcia'), 'shared');
