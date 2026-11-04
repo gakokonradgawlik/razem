@@ -1,4 +1,4 @@
-<!-- razem/design/interface.md · updated 2026-10-28 by Codex -->
+<!-- razem/design/interface.md · updated 2026-11-04 by Claude (RAZ-3) -->
 # Razem — interfejs
 ## Kierunek
 Spokojny, czytelny interfejs inspirowany iOS: systemowy krój -apple-system, system-ui; jasne powierzchnie, zaokrąglone grupy, subtelne separatory, niebieski akcent, oszczędna ikonografia. Bez kopiowania marki Apple ani zewnętrznych fontów/zasobów koniecznych do offline.
@@ -25,3 +25,13 @@ Na szerokim ekranie boczna nawigacja i ograniczona szerokość treści; te same 
 Własny ekran objaśnia 'Udostępnij → Do ekranu początkowego'; nie obiecuj przycisku beforeinstallprompt na iOS. Nie wyświetlaj systemowej prośby push przy pierwszej wizycie; dopiero po naciśnięciu Włącz powiadomienia. Rozróżnij brak wsparcia, brak instalacji, odmowę i niedostępną subskrypcję.
 Pokaż ostatnią synchronizację i ostrzeżenie o niewysłanych zmianach przed wylogowaniem. Żadnych surowych nazw API, ścieżek, tokenów czy szczegółów implementacji w zwykłych ekranach.
 
+
+## Implementacja RAZ-3 (stan kodu)
+- `apps/web/src/ui/`: tokeny w `style.css` (jasny/ciemny przez `prefers-color-scheme` lub `data-theme`), lokalne ikony SVG (`icons.tsx`, w tym znak Razem), komponenty `components.tsx` (nagłówek ekranu, przycisk dodawania, `Menu`, `List`/`ListRow`, `EmptyState`, `Notice`, `SyncBadge`, `Segmented`, `TextField`/`TextArea`/`SelectField`/`DateField`/`Toggle`, `PrivacyPicker`, `PrivacyTag`) i `form.tsx` (pasek Anuluj · tytuł · Zapisz, błędy przy polach, fokus na pierwszym błędzie, treść nigdy nie jest czyszczona po błędzie).
+- Router History API (`router.tsx`), trasy w `App.tsx`: `/`, `/zakupy`, `/zakupy/nowa`, `/zadania`, `/zadania/nowe`, `/kalendarz`, `/kalendarz/nowe`, `/wiecej`, `/notatki`, `/notatki/nowa`, `/wazne-daty`, `/wazne-daty/nowa`, `/kosz`, `/ustawienia`, `/ustawienia/instalacja`, `/ustawienia/haslo`, `/logowanie`. Poniżej 900 px dolny pasek, od 900 px boczna nawigacja i treść maks. 44rem.
+- Dane i auth przez port `AppServices` (`services.tsx`). Domyślny adapter nic nie zapisuje: zapis zwraca „Nie zapisano…”, logowanie/zmiana hasła „funkcja nie jest jeszcze dostępna”. RAZ-5 podłącza `/api/auth/*`, Dexie (wpis + outbox w jednej transakcji) i koordynator sync (`syncState`). Ekrany list pokazują wyłącznie stany puste — brak danych przykładowych.
+- Formularze budują dane przez schematy `dataSchemas` z `@razem/contracts`; domyślna widoczność z `defaultVisibility`; prywatne zadanie wymusza przypisanie „Ja”; wydarzenie całodniowe ma wyłączny koniec (dzień po ostatnim); godziny przez `localTimeToInstant` w Europe/Warsaw.
+- Status sync: słownik z sekcji Interakcje (`syncLabel`). Bez sesji: „Nie zalogowano” (lub „Zaloguj się, aby wysłać zmiany”, gdy coś czeka); „Offline” tylko gdy `navigator.onLine === false` — nigdy jako dowód dostępności serwera.
+- Motyw: preferencja urządzenia w `localStorage` (`razem:theme`), stosowana przed renderem. Rozmiar tekstu: `font: -apple-system-body` (Dynamic Type) i jednostki rem.
+- Safe area: `env(safe-area-inset-*)` w pasku, treści, pasku formularza i ekranie logowania. Klawiatura: `visualViewport` → `--keyboard-inset` i `data-keyboard="open"` (ukrywa dolny pasek podczas edycji; pinch-zoom bez edycji ignorowany).
+- Poza zakresem RAZ-3: manifest i ikony PNG 180/192/512/maskable, Service Worker (zadanie PWA), edycja/odhaczanie istniejących wpisów, konflikty i eksport (moduły funkcjonalne).

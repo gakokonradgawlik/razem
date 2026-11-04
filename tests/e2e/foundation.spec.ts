@@ -10,8 +10,8 @@ test('zbudowany ekran, realne HTTP API i dwa odizolowane konteksty', async ({ br
     for (const context of contexts) {
       const page = await context.newPage();
       await page.goto('/');
-      await expect(page.getByRole('heading', { name: 'Razem', level: 1 })).toBeVisible();
-      await expect(page.getByText('Tylko ja')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Dzisiaj', level: 1 })).toBeVisible();
+      await expect(page.getByRole('navigation', { name: 'Główna nawigacja' })).toBeVisible();
       const denied = await context.request.get('http://127.0.0.1:4317/api/sync/pull');
       expect(denied.status()).toBe(401);
       expect(await denied.json()).toEqual({ error: 'authentication_required' });
