@@ -33,6 +33,8 @@ Nie używaj Background Sync API jako wymaganego mechanizmu; jego dostępność j
 Kod: `apps/server/src/sync/` (`service.ts`, `http.ts`), `packages/db/src/records.ts`
 (`RecordRepository` – jedyna ścieżka zapisu domeny), `packages/db/src/sync-store.ts`, migracja v3.
 - **Push** `POST /api/sync/push` (sesja, CSRF jak w RAZ-2; limit treści 1 MiB, partia 1–100).
+  Push i pull wymagają nagłówka `x-razem-account` równego kontu sesji tego żądania, inaczej
+  409 `account_mismatch` bez skutków (dodane w RAZ-5, opis w sekcji klienta).
   Koperta jest walidowana całościowo (400 `invalid_request`, inna `protocolVersion` → 400
   `upgrade_required`, za duża → 413 `payload_too_large`); każda mutacja osobno, więc jeden zły
   element dostaje własny `validation_error`, a reszta partii przechodzi. Mutacje wykonywane w
