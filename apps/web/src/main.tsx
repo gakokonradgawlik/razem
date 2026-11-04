@@ -2,8 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
 import { Api } from './api.js';
-import { AppController } from './data/controller.js';
-import { useControllerServices } from './data/live.js';
+import { AppController } from './offline/controller.js';
+import { useControllerServices } from './offline/live.js';
 import { applyTheme, readTheme } from './theme.js';
 import './style.css';
 
