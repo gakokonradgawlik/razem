@@ -122,9 +122,22 @@ kolejka, ACK/rebase, pull, konflikty, eksport), `sync.ts` (silnik), `controller.
   już nie zwrócił. Tombstone usuwa czysty rekord i jego czyste dzieci; brudnego nie wskrzesza.
 - **Silnik**: start, `focus`/`visibilitychange`, `online`, po komendzie i co 15 s, gdy karta jest
   widoczna. Brak Background Sync i pracy zamkniętej PWA. Jeden cykl naraz na bazę konta między
-  kartami: Web Locks (`ifAvailable`), w razie braku – lease w `meta` (60 s, odnawiany).
-  Cykl: `GET /api/me` (sprawdzenie, że sesja należy do konta tej bazy – inaczej kolejka nie
-  jest wysyłana, a aplikacja przełącza się na konto sesji) → push → pull → push nowych zmian.
+  kartami: Web Locks (`ifAvailable`), w razie braku – lease w `meta` (60 s, z losowym tokenem).
+  Lease jest odnawiany i weryfikowany **przed każdym żądaniem** (push, pull) i przed zapisem strony
+  pull; odnowienie udaje się tylko, gdy wiersz wciąż ma token tego cyklu. Utrata lease (np. karta
+  zamrożona w tle dłużej niż 60 s, a inna karta go przejęła – nawet jeśli już zwolniła) kończy
+  cykl bez dalszej wysyłki. Granica: żądanie już wysłane przed zamrożeniem może się zakończyć
+  równolegle z cyklem innej karty – skutki chroni idempotencja serwera (receipt).
+  Cykl: `GET /api/me` (sesja należy do konta tej bazy – inaczej kolejka nie jest wysyłana,
+  a aplikacja przełącza się na konto sesji) → push → pull → push nowych zmian.
+- **Powiązanie z kontem po stronie serwera**: każde `push`/`pull` ma nagłówek `x-razem-account`
+  (`SYNC_ACCOUNT_HEADER`, ID konta bazy). Serwer porównuje go z sesją **tego samego** żądania;
+  brak lub inna wartość → 409 `account_mismatch`, bez zapisu, receipt i danych. Dzięki temu
+  zmiana ciasteczka w innej karcie między `/api/me` a push, między partiami albo przed pull nie
+  przypisze treści A do B ani nie wpisze danych B do bazy A. Klient na 409 zatrzymuje cykl,
+  ustawia status, pyta `/api/me` i przełącza kartę na konto sesji; kolejka A zostaje w bazie A.
+  Nagłówek niczego nie autoryzuje – decyduje sesja. `stop()` silnika (wylogowanie, zmiana konta
+  w tej karcie) przerywa trwające żądanie (AbortController) i kończy cykl przed kolejnym.
   Backoff wykładniczy 2 s…5 min z jitterem dla ticków; zdarzenia użytkownika/sieci go pomijają;
   `Retry-After` przy 429. `navigator.onLine` to tylko podpowiedź: próba zawsze idzie do serwera,
   „Offline” = nieudana próba sieciowa przy `onLine=false`; odpowiedź HTTP 5xx/proxy = „Serwer

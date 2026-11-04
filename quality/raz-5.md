@@ -17,11 +17,11 @@ Ekrany RAZ-3 działają teraz na lokalnej bazie (lista odświeża się po każde
 | Kontrola | Wynik |
 | --- | --- |
 | `npm run typecheck` | PASS |
-| `npm test` | PASS: 17 plików, 156 testów |
+| `npm test` | PASS: 17 plików, 160 testów (po review: +3 klienta, +1 serwera) |
 | `npm run build` | PASS (ostrzeżenie Vite o paczce >500 kB jak w RAZ-3) |
 | `npm run test:e2e` | PASS 39, 1 pominięty (safe-area tylko Chromium, jak w RAZ-3) |
 
-### Klient ↔ prawdziwy serwer (vitest, `apps/web/src/offline/sync.test.ts`, 17 testów)
+### Klient ↔ prawdziwy serwer (vitest, `apps/web/src/offline/sync.test.ts`, 20 testów)
 Dexie na fake-indexeddb (osobna fabryka = osobny telefon, wspólna = karty), serwer Fastify +
 SQLite z RAZ-4 przez `app.inject` z ciasteczkami, CSRF i wstrzykiwanymi awariami (`test-harness.ts`).
 - Rekord i outbox w jednej transakcji; QuotaExceeded przy zapisie outboxu wycofuje rekord (create i update), wynik `storage_full`; eksport działa; „restart” (nowa karta) zachowuje kolejkę, potem jeden ACK.
@@ -33,6 +33,10 @@ SQLite z RAZ-4 przez `app.inject` z ciasteczkami, CSRF i wstrzykiwanymi awariami
 - To samo odhaczenie na dwóch telefonach: ACK bez konfliktu.
 - 502, timeout, 401 (odwołane sesje): kolejka zostaje; drugie konto na tym samym urządzeniu ma własną pustą bazę i nie wysyła kolejki A; ponowne logowanie A wysyła ją raz.
 - Sesja innego konta w przeglądarce (logowanie w innej karcie): kolejka A nie jest wysłana, aplikacja przechodzi na konto sesji.
+- Po review — przełączenie na B **w trakcie** cyklu, deterministycznie po odpowiedzi `/api/me`, po 1. partii push i po ostatniej partii (przed pull): żadna treść A nie ma ownera B, wysłane przed zmianą należą do A, pull nie wpisuje prywatnej notatki B do bazy A, pending A zostaje i po ponownym logowaniu A trafia na serwer jako A/private. Serwer: `apps/server/src/sync/sync.test.ts` „409 account_mismatch” (cookie B + nagłówek A, brak nagłówka → 409, 0 notatek i 0 receipt).
+- Po review — `stop()` w trakcie cyklu: po 1. partii żadne kolejne żądanie (tylko `/api/me` i jeden push).
+- Po review — lease bez Web Locks, z kontrolowanym zegarem: 10 rund push po 8 s (> 60 s); druga karta w 9. rundzie dostaje `skipped_locked`, maks. 1 push naraz, wersja 11. Zamrożenie pierwszej karty po 3. push (+120 s): druga przejmuje lease i kończy; pierwsza po wznowieniu nie wysyła nic, maks. 1 push naraz, jeden efekt (wersja 11).
+- Każdy z trzech nowych testów sprawdzono mutacyjnie: po wyłączeniu odpowiedniej poprawki (kontrola nagłówka na serwerze / weryfikacja lease / zatrzymanie w `guard()`) test nie przechodzi.
 - Wylogowanie z pending wymaga decyzji, offline odmawia, potem usuwa bazę konta i wpis tożsamości.
 - Stronicowany bootstrap (limit 2) z zapisem między stronami snapshotu: wszystkie 10 rekordów.
 - Nieważny cursor → pełny resync: czysty nieaktualny rekord usunięty, pending wysłany; ręczny resync z czekającą edycją ją zachowuje.
