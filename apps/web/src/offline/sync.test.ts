@@ -72,6 +72,18 @@ describe('lokalna transakcja i kolejka', () => {
     expect(serverRow(id)).toMatchObject({ title: 'Lista prezentów', version: 1, owner_id: ACCOUNTS.a.id });
   });
 
+  it('niedostępny magazyn (np. tryb prywatny): stan widoczny, żaden zapis nie udaje sukcesu', async () => {
+    const phone = new Phone(server);
+    const broken = { open: () => { throw new DOMException('IndexedDB zablokowane', 'SecurityError'); }, deleteDatabase: phone.indexedDB.deleteDatabase.bind(phone.indexedDB), cmp: phone.indexedDB.cmp.bind(phone.indexedDB), databases: async () => [] };
+    const { AppController } = await import('./controller.js');
+    const { Api } = await import('../api.js');
+    const tab = new AppController({ api: new Api(phone.network.fetcher), storage: phone.storage, dbOptions: { indexedDB: broken as unknown as IDBFactory, IDBKeyRange } });
+    open.push(tab);
+    expect(await tab.login(ACCOUNTS.a.login, ACCOUNTS.a.password)).toEqual({ ok: false, reason: 'storage_unavailable' });
+    expect(tab.getSnapshot()).toMatchObject({ phase: 'storage_unavailable', storage: 'unavailable' });
+    expect(await tab.command((s) => s.create('note', note('x'), 'private'))).toEqual({ ok: false, reason: 'storage_unavailable' });
+  });
+
   it('zła treść nie trafia do kolejki; dziecko dziedziczy widoczność rodzica', async () => {
     const tab = await signedIn(new Phone(server), 'a');
     expect(await tab.command((s) => s.create('note', { title: '' , body: '' }, 'private'))).toEqual({ ok: false, reason: 'invalid' });
