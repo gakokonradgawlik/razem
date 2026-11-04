@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { ComponentType } from 'react';
-import { Link, usePath } from './router.js';
+import { Link, ParamsProvider, matchPath, usePath } from './router.js';
+import type { Params } from './router.js';
 import { Icon, BrandMark } from './ui/icons.js';
 import type { IconName } from './ui/icons.js';
 import { EmptyState, ScreenHeader, Section } from './ui/components.js';
@@ -9,10 +10,13 @@ import type { AppServices } from './services.js';
 import { useTheme } from './theme.js';
 import { useKeyboardInset } from './keyboard.js';
 import { TodayScreen } from './screens/Today.js';
-import { NewShoppingListScreen, ShoppingScreen } from './screens/Shopping.js';
-import { NewTaskScreen, TasksScreen } from './screens/Tasks.js';
-import { CalendarScreen, NewEventScreen } from './screens/Calendar.js';
-import { ImportantDatesScreen, MoreScreen, NewImportantDateScreen, NewNoteScreen, NotesScreen, TrashScreen } from './screens/More.js';
+import { EditShoppingListScreen, NewShoppingItemScreen, NewShoppingListScreen, ShoppingItemScreen, ShoppingListScreen, ShoppingScreen, shoppingPaths } from './screens/Shopping.js';
+import { EditTaskScreen, NewTaskScreen, TaskDetailScreen, TasksScreen, taskPaths } from './screens/Tasks.js';
+import { CalendarScreen, EditEventScreen, EventDetailScreen, NewEventScreen, eventPaths } from './screens/Calendar.js';
+import {
+  EditImportantDateScreen, EditNoteScreen, ImportantDateDetailScreen, ImportantDatesScreen, MoreScreen, NewImportantDateScreen, NewNoteScreen,
+  NoteDetailScreen, NotesScreen, TrashScreen, datePaths, notePaths,
+} from './screens/More.js';
 import { InstallScreen, SettingsScreen } from './screens/Settings.js';
 import { ChangePasswordScreen, LoginScreen } from './screens/Auth.js';
 
@@ -31,15 +35,27 @@ export const routes: Route[] = [
   { path: '/', title: 'Dzisiaj', tab: 'today', screen: TodayScreen },
   { path: '/zakupy', title: 'Zakupy', tab: 'shopping', screen: ShoppingScreen },
   { path: '/zakupy/nowa', title: 'Nowa lista', tab: 'shopping', screen: NewShoppingListScreen },
+  { path: shoppingPaths.list, title: 'Lista zakupów', tab: 'shopping', screen: ShoppingListScreen },
+  { path: shoppingPaths.editList, title: 'Edytuj listę', tab: 'shopping', screen: EditShoppingListScreen },
+  { path: shoppingPaths.newItem, title: 'Nowa pozycja', tab: 'shopping', screen: NewShoppingItemScreen },
+  { path: shoppingPaths.item, title: 'Pozycja', tab: 'shopping', screen: ShoppingItemScreen },
   { path: '/zadania', title: 'Zadania', tab: 'tasks', screen: TasksScreen },
   { path: '/zadania/nowe', title: 'Nowe zadanie', tab: 'tasks', screen: NewTaskScreen },
+  { path: taskPaths.detail, title: 'Zadanie', tab: 'tasks', screen: TaskDetailScreen },
+  { path: taskPaths.edit, title: 'Edytuj zadanie', tab: 'tasks', screen: EditTaskScreen },
   { path: '/kalendarz', title: 'Kalendarz', tab: 'calendar', screen: CalendarScreen },
   { path: '/kalendarz/nowe', title: 'Nowe wydarzenie', tab: 'calendar', screen: NewEventScreen },
+  { path: eventPaths.detail, title: 'Wydarzenie', tab: 'calendar', screen: EventDetailScreen },
+  { path: eventPaths.edit, title: 'Edytuj wydarzenie', tab: 'calendar', screen: EditEventScreen },
   { path: '/wiecej', title: 'Więcej', tab: 'more', screen: MoreScreen },
   { path: '/notatki', title: 'Notatki', tab: 'more', screen: NotesScreen },
   { path: '/notatki/nowa', title: 'Nowa notatka', tab: 'more', screen: NewNoteScreen },
+  { path: notePaths.detail, title: 'Notatka', tab: 'more', screen: NoteDetailScreen },
+  { path: notePaths.edit, title: 'Edytuj notatkę', tab: 'more', screen: EditNoteScreen },
   { path: '/wazne-daty', title: 'Ważne daty', tab: 'more', screen: ImportantDatesScreen },
   { path: '/wazne-daty/nowa', title: 'Nowa ważna data', tab: 'more', screen: NewImportantDateScreen },
+  { path: datePaths.detail, title: 'Ważna data', tab: 'more', screen: ImportantDateDetailScreen },
+  { path: datePaths.edit, title: 'Edytuj ważną datę', tab: 'more', screen: EditImportantDateScreen },
   { path: '/kosz', title: 'Kosz', tab: 'more', screen: TrashScreen },
   { path: '/ustawienia', title: 'Ustawienia', tab: 'more', screen: SettingsScreen },
   { path: '/ustawienia/instalacja', title: 'Instalacja na iPhonie', tab: 'more', screen: InstallScreen },
@@ -57,9 +73,17 @@ function NotFoundScreen() {
 }
 const notFound: Route = { path: '', title: 'Nie znaleziono', tab: 'today', screen: NotFoundScreen };
 
+export function findRoute(path: string): [Route, Params] {
+  for (const candidate of routes) {
+    const params = matchPath(candidate.path, path);
+    if (params) return [candidate, params];
+  }
+  return [notFound, {}];
+}
+
 export function App({ services = unavailableServices }: { services?: AppServices }) {
   const path = usePath();
-  const route = routes.find((candidate) => candidate.path === path) ?? notFound;
+  const [route, params] = findRoute(path);
   useTheme();
   useKeyboardInset();
   const first = useRef(true);
@@ -69,10 +93,11 @@ export function App({ services = unavailableServices }: { services?: AppServices
     // Move focus to the new screen title for VoiceOver, but not on the initial load.
     if (first.current) { first.current = false; return; }
     document.querySelector<HTMLElement>('[data-screen-title]')?.focus({ preventScroll: true });
-  }, [route]);
+  }, [route, path]);
 
   const Screen = route.screen;
   if (route.chrome === 'none') return <ServicesProvider value={services}><Screen /></ServicesProvider>;
+  const screen = <ParamsProvider value={params}><Screen /></ParamsProvider>;
   return (
     <ServicesProvider value={services}>
       <a className="skip-link" href="#main">Przejdź do treści</a>
@@ -89,7 +114,7 @@ export function App({ services = unavailableServices }: { services?: AppServices
             ))}
           </ul>
         </nav>
-        <main className="content" id="main" key={route.path}><Screen /></main>
+        <main className="content" id="main" key={path}>{screen}</main>
       </div>
     </ServicesProvider>
   );

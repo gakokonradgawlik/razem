@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { App, routes, tabs } from './App.js';
+import { App, findRoute, routes, tabs } from './App.js';
 import { localDatabaseName } from './local-db.js';
 import { navigate } from './router.js';
 import { unavailableServices } from './services.js';
@@ -25,18 +25,22 @@ it('dolna nawigacja ma pięć polskich zakładek i przełącza ekrany', () => {
   }
 });
 
-it('każdy ekran MVP ma polski tytuł, a ekrany list mają stan pusty z działaniem', () => {
+const SAMPLE_ID = '0b6f5a62-3c1d-4e8f-9a7b-1c2d3e4f5a6b';
+it('każdy ekran MVP (także szczegóły i edycja) ma polski tytuł; bez magazynu wpisów stany są uczciwe', async () => {
   render(<App />);
   for (const route of routes) {
-    go(route.path);
+    const path = route.path.replace(/:\w+/g, SAMPLE_ID);
+    go(path);
+    expect(findRoute(path)[0]).toBe(route);
     const heading = screen.getByRole('heading', { level: 1 });
     expect(heading.textContent?.length).toBeGreaterThan(0);
     expect(document.title).toContain(route.path === '/' ? 'Razem' : route.title);
+    if (route.path.includes(':')) expect(await screen.findByText('Nie można wyświetlić wpisu')).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/\b(undefined|null|NaN|api\/|TODO|lorem)\b/i);
   }
   for (const path of ['/zakupy', '/zadania', '/kalendarz', '/notatki', '/wazne-daty']) {
     go(path);
-    expect(screen.getAllByRole('link').some((link) => link.classList.contains('button'))).toBe(true);
+    await waitFor(() => expect(screen.getAllByRole('link').some((link) => link.classList.contains('button'))).toBe(true));
   }
   go('/kosz');
   expect(screen.getByText('Kosz jest pusty')).toBeTruthy();

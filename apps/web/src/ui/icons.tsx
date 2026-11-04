@@ -33,6 +33,7 @@ const paths = {
   download: <><path d="M12 4v11M8 11l4 4 4-4" /><path d="M5 19.5h14" /></>,
   clock: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></>,
   palette: <><path d="M12 3.5a8.5 8.5 0 0 0 0 17c1.2 0 1.7-.8 1.4-1.8-.4-1.2.3-2.2 1.5-2.2H17a3.5 3.5 0 0 0 3.5-3.5c0-5.2-3.8-9.5-8.5-9.5Z" /><circle cx="8" cy="11" r="1.1" fill="currentColor" stroke="none" /><circle cx="11.5" cy="7.8" r="1.1" fill="currentColor" stroke="none" /><circle cx="15.5" cy="9" r="1.1" fill="currentColor" stroke="none" /></>,
+  edit: <><path d="M5 19l1-4.2L15.8 5a1.8 1.8 0 0 1 2.6 0l.6.6a1.8 1.8 0 0 1 0 2.6L9.2 18Z" /><path d="M13.8 7l3.2 3.2M4.5 20.5h15" /></>,
   phone: <><rect x="7" y="2.5" width="10" height="19" rx="2.5" /><path d="M10.5 18.5h3" /></>,
 } satisfies Record<string, ReactElement>;
 

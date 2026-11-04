@@ -49,3 +49,32 @@ export function addMonths(year: number, month: number, delta: number): { year: n
   const zeroBased = year * 12 + (month - 1) + delta;
   return { year: Math.floor(zeroBased / 12), month: (zeroBased % 12) + 1 };
 }
+
+/** "2026-03-28" → PlainDate (date-only values from the contract). */
+export function parseIsoDate(value: string): PlainDate {
+  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+  return { year, month, day };
+}
+
+/** Shift a date-only value by whole days (no time zone involved). */
+export function addDays(value: string, delta: number): string {
+  const { year, month, day } = parseIsoDate(value);
+  return new Date(Date.UTC(year, month - 1, day + delta)).toISOString().slice(0, 10);
+}
+
+/** UTC instant → wall-clock date and time in the household zone, for form fields. */
+export function instantToLocal(instant: string, timezone = DEFAULT_TIMEZONE): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(instant));
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` };
+}
+
+const dateTimeFormat = new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: DEFAULT_TIMEZONE });
+/** "sobota, 28 marca 2026 18:00" in Europe/Warsaw. */
+export const formatInstant = (instant: string) => dateTimeFormat.format(new Date(instant));
+export const formatIsoDate = (value: string) => formatFullDate(parseIsoDate(value));
+const dayMonthFormat = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+/** Annual date without a year: "14 czerwca". */
+export const formatDayMonth = (month: number, day: number) => dayMonthFormat.format(new Date(Date.UTC(2000, month - 1, day, 12)));

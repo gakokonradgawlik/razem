@@ -15,7 +15,19 @@ export type ActionResult = { ok: true } | { ok: false; reason: AuthFailure | 'st
 
 export type Session = { login: string; displayName: string; mustChangePassword: boolean };
 export type Visibility = 'private' | 'shared';
-export type DraftInput = { entityType: EntityType; visibility: Visibility; data: Record<string, unknown> };
+/** New record. Children (shopping_item, task_occurrence, reminder) have no visibility: they inherit the parent's. */
+export type DraftInput = { entityType: EntityType; visibility?: Visibility; data: Record<string, unknown> };
+/** A record as the local store shows it to this account (already ACL-filtered by RAZ-5). */
+export type StoredRecord = {
+  id: string; entityType: EntityType; visibility: Visibility; version: number;
+  /** True when the signed-in user owns the record ("Ja" in assignee is relative to the owner). */
+  mine: boolean; data: Record<string, unknown>;
+};
+/** not_found also covers "no access": the UI never reveals whether a private record exists. */
+export type LoadResult<T> = { status: 'ok'; value: T } | { status: 'not_found' } | { status: 'unavailable' };
+export type RecordQuery = { entityType: EntityType; parentId?: string };
+export type UpdateInput = { entityType: EntityType; id: string; baseVersion: number; patch: Record<string, unknown> };
+export type DeleteInput = { entityType: EntityType; id: string; baseVersion: number };
 
 export interface AppServices {
   session: Session | null;
@@ -23,15 +35,26 @@ export interface AppServices {
   changePassword(request: PasswordChangeRequest): Promise<ActionResult>;
   /** Writes the record and its outbox entry locally (RAZ-5). Must not resolve ok unless persisted. */
   saveRecord(input: DraftInput): Promise<ActionResult>;
+  /** Changes only the given fields; visibility and parent links are immutable. */
+  updateRecord(input: UpdateInput): Promise<ActionResult>;
+  /** Moves the record to the trash (restorable for 30 days). */
+  deleteRecord(input: DeleteInput): Promise<ActionResult>;
+  /** Live records of a type on this device (children by parentId). */
+  listRecords(query: RecordQuery): Promise<LoadResult<StoredRecord[]>>;
+  getRecord(entityType: EntityType, id: string): Promise<LoadResult<StoredRecord>>;
   pendingChanges: number;
   /** Status reported by the sync coordinator (RAZ-5); absent while it does not exist. */
   syncState?: SyncState;
 }
 
 const notImplemented = async (): Promise<ActionResult> => ({ ok: false, reason: 'not_implemented' });
+const noStorage = async (): Promise<ActionResult> => ({ ok: false, reason: 'storage_unavailable' });
+const nothingStored = async () => ({ status: 'unavailable' as const });
 export const unavailableServices: AppServices = {
   session: null, pendingChanges: 0,
-  login: notImplemented, changePassword: notImplemented, saveRecord: async () => ({ ok: false, reason: 'storage_unavailable' }),
+  login: notImplemented, changePassword: notImplemented,
+  saveRecord: noStorage, updateRecord: noStorage, deleteRecord: noStorage,
+  listRecords: nothingStored, getRecord: nothingStored,
 };
 
 const ServicesContext = createContext<AppServices>(unavailableServices);
