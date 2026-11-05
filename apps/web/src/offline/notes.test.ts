@@ -123,7 +123,7 @@ it('notatki ACL: prywatny tytuł/tekst/ID nie przechodzi do API, pull, konfliktu
 
 it('notatki: dwie edycje zachowują tekst po restarcie i po błędzie scalania, kolejna edycja serwera daje ponowny konflikt', async () => {
   const pa = new Phone(server), pb = new Phone(server);
-  const a = await login(pa, 'a'), b = await login(pb, 'b');
+  const a = await login(pa, 'a'); let b = await login(pb, 'b');
   const id = ok(await a.command((s) => s.create('note', data, 'shared')));
   await a.syncNow(); await b.syncNow(); pa.setOffline(true); pb.setOffline(true);
   ok(await a.command((s) => s.update('note', id, { body: 'Żółw 🐢 – Anna' })));
@@ -131,6 +131,9 @@ it('notatki: dwie edycje zachowują tekst po restarcie i po błędzie scalania, 
   pa.setOffline(false); await a.syncNow(); pb.setOffline(false); await b.syncNow();
   const [conflict] = await b.store!.db.conflicts.toArray();
   expect(conflict).toMatchObject({ local: { data: { body: 'Łódź ⛵ – Tomek' } }, server: { record: { data: { body: 'Żółw 🐢 – Anna' } } } });
+  await b.dispose(); tabs.splice(tabs.indexOf(b), 1); pb.setOffline(true);
+  b = pb.tab(); tabs.push(b); await b.init();
+  expect(await b.store!.conflict(conflict!.id)).toEqual(conflict);
   const fail = () => { throw new DOMException('full', 'QuotaExceededError'); };
   b.store!.db.queue.hook('creating', fail);
   const merged = { ...data, body: 'Żółw 🐢 i łódź ⛵' };
@@ -138,7 +141,7 @@ it('notatki: dwie edycje zachowują tekst po restarcie i po błędzie scalania, 
   expect(await b.store!.conflict(conflict!.id)).toEqual(conflict);
   b.store!.db.queue.hook('creating').unsubscribe(fail);
   ok(await a.command((s) => s.update('note', id, { body: 'Jeszcze jedna zmiana ✍️' }))); await a.syncNow();
-  ok(await b.command((s) => s.resolve(conflict!.id, { choice: 'merge', data: merged }))); await b.syncNow();
+  ok(await b.command((s) => s.resolve(conflict!.id, { choice: 'merge', data: merged }))); pb.setOffline(false); await b.syncNow();
   const [again] = await b.store!.db.conflicts.toArray();
   expect(again).toMatchObject({ local: { data: merged }, server: { record: { data: { body: 'Jeszcze jedna zmiana ✍️' } } } });
   ok(await b.command((s) => s.resolve(again!.id, { choice: 'merge', data: { ...merged, body: merged.body + '\nJeszcze jedna zmiana ✍️' } })));
