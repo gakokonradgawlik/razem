@@ -11,6 +11,7 @@ import type { Api } from '../api.js';
 import { LocalStore } from './store.js';
 import type { StoreFailure, StoreResult } from './store.js';
 import { INITIAL_STATUS, SyncEngine } from './sync.js';
+import { requestPersistentStorage } from '../storage-persistence.js';
 import type { EngineOptions, SyncStatus } from './sync.js';
 
 export type Account = { userId: string; householdId: string; login: string; displayName: string; mustChangePassword: boolean };
@@ -119,7 +120,7 @@ export class AppController {
     this.unwatch = () => subscription.unsubscribe();
     this.set({ phase: 'ready', account, storage: 'ok', generation, ...(await this.readCounts(store)) });
     if (this.store !== store) return;
-    if (typeof navigator !== 'undefined') void navigator.storage?.persist?.().catch(() => undefined);
+    if (typeof navigator !== 'undefined') void requestPersistentStorage();
     if (this.options.autoSync) this.engine.start();
   }
 

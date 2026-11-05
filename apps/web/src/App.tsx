@@ -9,6 +9,7 @@ import { ServicesProvider, unavailableServices } from './services.js';
 import type { AppServices } from './services.js';
 import { useTheme } from './theme.js';
 import { useKeyboardInset } from './keyboard.js';
+import { usePwaState } from './pwa.js';
 import { TodayScreen } from './screens/Today.js';
 import { EditShoppingListScreen, NewShoppingItemScreen, NewShoppingListScreen, ShoppingItemScreen, ShoppingListScreen, ShoppingScreen, shoppingPaths } from './screens/Shopping.js';
 import { EditTaskScreen, NewTaskScreen, TaskDetailScreen, TasksScreen, taskPaths } from './screens/Tasks.js';
@@ -86,6 +87,7 @@ export function findRoute(path: string): [Route, Params] {
 
 export function App({ services = unavailableServices }: { services?: AppServices }) {
   const path = usePath();
+  const pwa = usePwaState();
   const [route, params] = findRoute(path);
   useTheme();
   useKeyboardInset();
@@ -140,6 +142,9 @@ export function App({ services = unavailableServices }: { services?: AppServices
           </ul>
         </nav>
         <main className="content" id="main" key={`${accountKey}|${path}`}>
+          {pwa === 'update' && <Notice tone="info" role="status" title="Dostępna nowa wersja">
+            Dokończ i zapisz formularze. Następnie zamknij wszystkie okna Razem i otwórz aplikację ponownie. Niewysłane zmiany pozostaną na tym urządzeniu.
+          </Notice>}
           {switchedTo !== null && (
             <Notice tone="warning" role="alert" title={`Otwarto konto: ${switchedTo}`}>
               W tej aplikacji zalogowano inne konto. Niezapisane formularze poprzedniego konta zamknięto; jego niewysłane zmiany czekają na jego ponowne logowanie.
