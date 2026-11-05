@@ -58,7 +58,9 @@ for (const width of widths) {
         await page.screenshot({ path: join(shots, `${info.project.name}-${width}${path.replaceAll('/', '_') || '_'}.png`), fullPage: true });
       }
     }
-    await page.goto('/kalendarz');
+    // A month with local data uses the existing synthetic fixture adapter.
+    // The unauthenticated production origin correctly reports unavailable storage.
+    await page.goto('http://127.0.0.1:4318/kalendarz');
     await page.getByRole('radio', { name: 'Miesiąc' }).check();
     await expect(page.getByRole('table')).toBeVisible();
     expect(await layoutProblems(page), `miesiąc @${width}`).toEqual([]);

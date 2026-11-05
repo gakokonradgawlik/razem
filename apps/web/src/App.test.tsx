@@ -41,7 +41,10 @@ it('każdy ekran MVP (także szczegóły i edycja) ma polski tytuł; bez magazyn
   }
   for (const path of ['/zakupy', '/zadania', '/kalendarz', '/notatki', '/wazne-daty']) {
     go(path);
-    await waitFor(() => expect(screen.getAllByRole('link').some((link) => link.classList.contains('button'))).toBe(true));
+    if (path === '/kalendarz') {
+      expect(await screen.findByText('Nie można wczytać kalendarza z tego urządzenia.')).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'Nowe wydarzenie' })).toBeTruthy();
+    } else await waitFor(() => expect(screen.getAllByRole('link').some((link) => link.classList.contains('button'))).toBe(true));
   }
   go('/kosz');
   expect(await screen.findByText('Kosz jest pusty')).toBeTruthy();

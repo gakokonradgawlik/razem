@@ -245,7 +245,7 @@ input[type="search"].input { -webkit-appearance: none; appearance: none; }
 .month__grid { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: center; }
 .month__grid th { font-size: 0.8125rem; color: var(--text-secondary); font-weight: 600; padding: 6px 0; }
 .month__grid td { padding: 2px 0; }
-.month__day { display: inline-grid; place-items: center; width: min(2.5rem, 100%); aspect-ratio: 1; border-radius: 50%; font-size: 1rem; }
+.month__day { display: inline-grid; place-items: center; width: min(2.75rem, 100%); min-height: 44px; aspect-ratio: 1; border-radius: 50%; position: relative; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; margin-inline: auto; }
 .month__day--today { background: var(--accent-fill); color: var(--on-accent); font-weight: 700; }
 .month .section__footer { text-align: center; }
 
@@ -317,3 +317,6 @@ input[type="search"].input { -webkit-appearance: none; appearance: none; }
 .merge-field__choices { display: grid; gap: 4px; }
 .merge-field__choice { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; overflow-wrap: anywhere; }
 .merge-field__choice input { width: 22px; height: 22px; flex: none; margin: 0; accent-color: var(--accent); }
+
+.month__day[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
+.month__dot { position: absolute; bottom: 3px; left: calc(50% - 2px); width: 4px; height: 4px; border-radius: 50%; background: currentColor; }

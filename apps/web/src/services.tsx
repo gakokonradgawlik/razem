@@ -44,6 +44,13 @@ export type ConflictView = {
 export type ConflictResolution = { choice: 'server' } | { choice: 'mine' } | { choice: 'merge'; data: Record<string, unknown> };
 export type TrashItem = { id: string; entityType: EntityType; title: string; deletedAt: string; visibility: Visibility };
 
+export type CalendarSave = {
+  entityType: 'calendar_event' | 'important_date'; id?: string; visibility: Visibility;
+  data: Record<string, unknown>;
+  /** Omitted on edit when the configuration was not changed in the form. */
+  reminder?: { enabled: boolean; minutesBefore: number; localTime: string | null };
+};
+
 export interface AppServices {
   /** No form may accept input until the initial account database is open. */
   initializing?: boolean;
@@ -83,6 +90,7 @@ export interface AppServices {
   resolveConflict?(id: string, resolution: ConflictResolution): Promise<ActionResult>;
   discardRejected?(id: string): Promise<ActionResult>;
   listTrash?(): Promise<LoadResult<TrashItem[]>>;
+  saveCalendar?(input: CalendarSave): Promise<ActionResult>;
   setTaskOccurrence?(taskId: string, occurrenceKey: string, completed: boolean): Promise<ActionResult>;
   restoreRecord?(entityType: EntityType, id: string): Promise<ActionResult>;
 }

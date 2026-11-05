@@ -13,7 +13,7 @@ export const isoDate = ({ year, month, day }: PlainDate) =>
   `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
 // Formatting a date-only value at UTC noon avoids any device-zone shift.
-const asUtc = (date: PlainDate) => new Date(Date.UTC(date.year, date.month - 1, date.day, 12));
+const asUtc = (date: PlainDate) => { const result = new Date(0); result.setUTCFullYear(date.year, date.month - 1, date.day); result.setUTCHours(12, 0, 0, 0); return result; };
 const longFormat = new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
 const fullFormat = new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 
@@ -31,12 +31,12 @@ export const WEEKDAYS = [
 ] as const;
 
 export function daysInMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return asUtc({ year, month: month + 1, day: 0 }).getUTCDate();
 }
 
 /** Monday-first grid for a month; null pads the leading/trailing cells. */
 export function monthGrid(year: number, month: number): (PlainDate | null)[][] {
-  const first = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+  const first = (asUtc({ year, month, day: 1 }).getUTCDay() + 6) % 7;
   const cells: (PlainDate | null)[] = Array.from({ length: first }, () => null);
   for (let day = 1; day <= daysInMonth(year, month); day++) cells.push({ year, month, day });
   while (cells.length % 7) cells.push(null);
@@ -59,7 +59,7 @@ export function parseIsoDate(value: string): PlainDate {
 /** Shift a date-only value by whole days (no time zone involved). */
 export function addDays(value: string, delta: number): string {
   const { year, month, day } = parseIsoDate(value);
-  return new Date(Date.UTC(year, month - 1, day + delta)).toISOString().slice(0, 10);
+  return asUtc({ year, month, day: day + delta }).toISOString().slice(0, 10);
 }
 
 /** UTC instant → wall-clock date and time in the household zone, for form fields. */
@@ -73,7 +73,7 @@ export function instantToLocal(instant: string, timezone = DEFAULT_TIMEZONE): { 
 
 const dateTimeFormat = new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: DEFAULT_TIMEZONE });
 /** "sobota, 28 marca 2026 18:00" in Europe/Warsaw. */
-export const formatInstant = (instant: string) => dateTimeFormat.format(new Date(instant));
+export const formatInstant = (instant: string, timezone = DEFAULT_TIMEZONE) => (timezone === DEFAULT_TIMEZONE ? dateTimeFormat : new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: timezone })).format(new Date(instant));
 export const formatIsoDate = (value: string) => formatFullDate(parseIsoDate(value));
 const dayMonthFormat = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'long', timeZone: 'UTC' });
 /** Annual date without a year: "14 czerwca". */

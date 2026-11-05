@@ -217,3 +217,19 @@ it('v3 → v4 zachowuje szablony, ukończenia i journal; nowe zdarzenia są bez 
   expect(db.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
   expect(db.sqlite.pragma('foreign_key_check')).toEqual([]);
 });
+
+it('kalendarz v2 → aktualny: date-only, 29.02 bez roku, przypomnienie i ACL przeżywają upgrade', () => {
+  const { db, dir } = tempDb(); migrate(db.sqlite, { list: migrations.slice(0, 2) }); seedAccounts(db);
+  const E = '40000000-0000-4000-8000-000000000001', D = '40000000-0000-4000-8000-000000000002', R = '40000000-0000-4000-8000-000000000003';
+  db.db.insert(schema.calendarEvents).values({ id: E, householdId: H, ownerId: A, visibility: 'private', version: 1, createdAt: T, updatedAt: T, deletedAt: null,
+    title: 'Wyjazd', description: '', allDay: true, timezone: 'Pacific/Kiritimati', startDate: '2026-12-30', endDate: '2027-01-03', startAt: null, endAt: null }).run();
+  db.db.insert(schema.importantDates).values({ id: D, householdId: H, ownerId: A, visibility: 'shared', version: 1, createdAt: T, updatedAt: T, deletedAt: null,
+    name: 'Bez roku', month: 2, day: 29, startYear: null, kind: 'anniversary' }).run();
+  db.db.insert(schema.reminders).values({ id: R, householdId: H, ownerId: A, visibility: 'private', version: 1, createdAt: T, updatedAt: T, deletedAt: null,
+    targetType: 'calendar_event', targetId: E, enabled: true, minutesBefore: 0, localTime: '09:00' }).run();
+  const before = ['calendar_events', 'important_dates', 'reminders'].map((table) => db.sqlite.prepare(`SELECT * FROM ${table}`).all());
+  migrate(db.sqlite, { backupPath: (v) => join(dir, `calendar-pre-v${v}.sqlite`) });
+  expect(['calendar_events', 'important_dates', 'reminders'].map((table) => db.sqlite.prepare(`SELECT * FROM ${table}`).all())).toEqual(before);
+  expect(db.sqlite.pragma('foreign_key_check')).toEqual([]); expect(db.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
+  expect(() => db.sqlite.prepare("UPDATE reminders SET visibility = 'shared' WHERE id = ?").run(R)).toThrow();
+});

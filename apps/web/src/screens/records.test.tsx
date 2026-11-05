@@ -340,3 +340,50 @@ it('harmonogram zatrzymany przed pierwszym terminem pozostaje dostępny w Ukońc
   await waitFor(() => expect(screen.getAllByText('Harmonogram zakończony')).toHaveLength(2));
   expect(screen.getByRole('link', { name: 'Edytuj' })).toBeTruthy();
 });
+
+it('kalendarz: miesiąc ma poniedziałek, zakresy i ważne daty; dzień filtruje listę z prywatnością', async () => {
+  const today = new Date();
+  const y = today.getFullYear(), m = String(today.getMonth() + 1).padStart(2,'0');
+  const data = [rec(EVENT, 'calendar_event', { ...fixtures.find((r) => r.id === EVENT)!.data, startDate: `${y}-${m}-02`, endDate: `${y}-${m}-05` }),
+    rec(DATE, 'important_date', { name: 'Bez roku w miesiącu', month: today.getMonth() + 1, day: 3, startYear: null, kind: 'anniversary' }, { visibility: 'private' })];
+  render(<App services={memoryServices(data)} />); go('/kalendarz');
+  fireEvent.click(screen.getByRole('radio', { name: 'Miesiąc' }));
+  const table = await screen.findByRole('table');
+  expect(within(table).getAllByRole('columnheader')[0]!.textContent).toBe('Pn');
+  const list = await screen.findByRole('list', { name: 'Wpisy miesiąca' });
+  expect(within(list).getByText('Bez roku w miesiącu')).toBeTruthy();
+  expect(within(list).getByText('Tylko ja')).toBeTruthy();
+  expect(within(list).queryByText(/lat/)).toBeNull();
+  fireEvent.click(within(table).getByRole('button', { name: /, 3 .*wpisy: 2/ }));
+  expect(within(screen.getByRole('list', { name: 'Wpisy wybranego dnia' })).getAllByRole('link')).toHaveLength(2);
+  fireEvent.click(within(table).getByRole('button', { name: /, 5 .*wpisy: 0/ }));
+  expect(await screen.findByText('Brak wydarzeń i ważnych dat w wybranym zakresie.')).toBeTruthy();
+});
+
+it('kalendarz: strefa i rozwiązanie luki DST walidowane przy polu bez utraty nazwy', async () => {
+  const services = memoryServices(); render(<App services={services} />); go('/kalendarz/nowe');
+  fireEvent.change(screen.getByLabelText('Nazwa'), { target: { value: 'W luce czasu' } });
+  fireEvent.change(screen.getByLabelText('Początek – dzień'), { target: { value: '2026-03-29' } });
+  fireEvent.change(screen.getByLabelText('Koniec – dzień'), { target: { value: '2026-03-29' } });
+  const times = screen.getAllByLabelText('Godzina');
+  fireEvent.change(times[0]!, { target: { value: '02:30' } }); fireEvent.change(times[1]!, { target: { value: '03:00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  expect(await screen.findByText('Koniec po uwzględnieniu zmiany czasu musi być po początku.')).toBeTruthy();
+  expect(services.saveRecord).not.toHaveBeenCalled();
+  fireEvent.change(times[1]!, { target: { value: '03:30' } });
+  fireEvent.change(screen.getByLabelText('Strefa czasowa'), { target: { value: 'Niepoprawna/Strefa' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  expect(await screen.findByText('Podaj poprawną strefę, np. Europe/Warsaw.')).toBeTruthy();
+  expect((screen.getByLabelText('Nazwa') as HTMLInputElement).value).toBe('W luce czasu');
+});
+
+it('edycja kalendarza wysyła tylko zmienione pola i zachowuje równoczesne ustawienie przypomnienia', async () => {
+  const reminder = rec(id(90), 'reminder', { targetType: 'calendar_event', targetId: EVENT, enabled: true, minutesBefore: 60, localTime: '10:00' });
+  const services = { ...memoryServices([...fixtures, reminder]), saveCalendar: vi.fn<NonNullable<AppServices['saveCalendar']>>(async () => ({ ok: true })) };
+  // The reminder query is scoped by its target (the actual services adapter applies this query).
+  services.listRecords.mockImplementation(async ({ entityType }) => ({ status: 'ok', value: [...fixtures, reminder].filter((r) => r.entityType === entityType) }));
+  render(<App services={services} />); go(`/kalendarz/${EVENT}/edycja`);
+  fireEvent.change(await screen.findByLabelText('Nazwa'), { target: { value: 'Nowy tytuł wyjazdu' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  await waitFor(() => expect(services.saveCalendar).toHaveBeenCalledWith({ entityType: 'calendar_event', id: EVENT, data: { title: 'Nowy tytuł wyjazdu' }, visibility: 'shared' }));
+});
