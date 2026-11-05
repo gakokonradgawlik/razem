@@ -31,7 +31,7 @@ async function addNote(page: Page, title: string, body: string, visibility: 'Wsp
   await page.getByRole('button', { name: 'Zapisz' }).click();
   await expect(page).not.toHaveURL(/nowa$/);
 }
-/** Client-side navigation (no reload): offline there is no Service Worker yet (RAZ-6). */
+/** Client-side navigation; full process restarts with SW are covered by pwa.spec.ts. */
 async function open(page: Page, path: string) {
   await page.evaluate((to) => { window.history.pushState(null, '', to); window.dispatchEvent(new PopStateEvent('popstate')); }, path);
 }

@@ -1,4 +1,4 @@
-<!-- razem/architecture/sync.md · updated 2026-11-04 by claude-runner (RAZ-4) -->
+<!-- razem/architecture/sync.md · updated 2026-11-05 by Codex (RAZ-6) -->
 # Razem — kontrakt offline i synchronizacji
 ## Gwarancje i granice
 Pierwsze uruchomienie, utworzenie kont i pobranie danych wymaga internetu/serwera. Potem działa lokalna kopia i kolejka zmian. Zamknięta PWA na iOS nie jest niezawodnym wykonawcą synchronizacji w tle; zawsze synchronizuj na starcie, visibilitychange/focus i odzyskaniu realnego połączenia oraz co 15 s podczas aktywnego użycia. Retry exponential backoff z jitter, limit czasu żądań; przy 401 czekaj na ponowne logowanie.
@@ -171,7 +171,25 @@ kolejka, ACK/rebase, pull, konflikty, eksport), `sync.ts` (silnik), `controller.
   z niewysłanymi zmianami i konfliktami tego konta. **Wylogowanie**: przy niewysłanych zmianach
   wymaga decyzji (wyślij/eksportuj/usuń), potrzebuje serwera (`/api/auth/logout`), potem kasuje
   bazę konta i wpis tożsamości. `navigator.storage.persist()` jest proszony bez obietnic.
-- **Granice**: bez Service Workera (RAZ-6) zimny start offline nie działa; otwarta karta działa.
+- **Granice historyczne RAZ-5**: zimny start offline dodano w RAZ-6 (sekcja niżej); wcześniej działała otwarta karta.
   Dane prywatne innego konta nigdy nie trafiają do lokalnej bazy (ACL serwera + sprawdzenie
   `canReadRecord` przy zapisie lokalnym). Przełączenie konta nie usuwa bazy poprzedniego konta
   (jego kolejka czeka na jego logowanie), ale nie jest dla nikogo innego otwierana.
+
+## Implementacja PWA RAZ-6
+Manifest i lokalne ikony 180/192/512/maskable są w `apps/web/public`. Build Vite wywołuje
+`scripts/build-pwa.mjs`: generuje SW i wersję cache z SHA256 zawartości plików oraz szablonu.
+Precache obejmuje wyłącznie jawne lokalne zasoby buildu, pobrane atomowo bez cookies.
+`/api`, health/readiness, obce originy i metody inne niż GET nie są cache’owane; brak runtime cache.
+Nawigacje SPA zawsze dostają shell wersji aktywnego SW, także online. Nowa wersja czeka na
+zamknięcie wszystkich kart/PWA; brak skipWaiting, clients.claim i wymuszonego reload.
+UI prosi o zapis formularzy przed zamknięciem. Outbox/conflicts pozostają w bazie konta;
+aktywacja usuwa tylko stare cache shellu. Nieudana instalacja zostawia poprzednią wersję.
+Schemat Dexie v2 i protokół v1 pozostają bez zmian; test przeglądarkowy sprawdza upgrade v1
+z outbox i zachowanie deviceId/clientMutationId. Kolejne migracje muszą być transakcyjne,
+zachowywać pending i kompatybilność aktywnych klientów; żadnego kasowania bazy przy błędzie
+ani rollbacku przez downgrade schematu. Publikacja wymaga kompletnego, spójnego artefaktu.
+Ekran instalacji rozpoznaje standalone, prowadzi po krokach iPhone i pokazuje gotowość shellu.
+Pierwsze uruchomienie ikoną, logowanie i bootstrap wymagają połączenia. Wynik persist jest
+widoczny (także odmowa/brak wsparcia/błąd); ochrona magazynu nie zastępuje backupu/eksportu.
+Dowody i lista fizycznych testów oczekujących po wdrożeniu: `quality/raz-6.md`.

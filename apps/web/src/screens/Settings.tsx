@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
+import { usePwaState, useStandalone } from '../pwa.js';
+import { persistenceSnapshot, subscribePersistence } from '../storage-persistence.js';
 import { DEFAULT_TIMEZONE } from '@razem/contracts';
 import { Button, List, ListRow, Notice, ScreenHeader, Section, Segmented, SyncBadge } from '../ui/components.js';
 import { Icon } from '../ui/icons.js';
@@ -50,6 +52,7 @@ export function SettingsScreen() {
         <List><ListRow icon="bell" iconTone="red" title="Powiadomienia" value="Niedostępne" detail="Będą dostępne po zalogowaniu w zainstalowanej aplikacji" /></List>
       </Section>
       <Section title="Dane">
+        <StorageNotice />
         <List>
           {session && services.exportPending
             ? <ListRow onClick={() => void exportPending()} icon="download" iconTone="green" title="Eksport niewysłanych zmian" detail={services.pendingChanges ? `Zmiany tylko na tym urządzeniu: ${services.pendingChanges}` : 'Brak niewysłanych zmian'} />
@@ -105,9 +108,14 @@ function LogoutSection({ onExport }: { onExport: () => Promise<void> }) {
 }
 
 export function InstallScreen() {
+  const standalone = useStandalone();
+  const pwa = usePwaState();
   return (
     <>
       <ScreenHeader title="Instalacja na iPhonie" back={{ to: '/ustawienia', label: 'Ustawienia' }} />
+      <Notice tone={standalone ? 'success' : 'info'} title={standalone ? 'Otworzono jako aplikację' : 'Otworzono w przeglądarce'}>
+        {standalone ? 'Razem działa w osobnym oknie z ekranu początkowego.' : 'Dodaj Razem do ekranu początkowego według poniższych kroków.'}
+      </Notice>
       <Section>
         <ol className="steps">
           <li><span className="steps__icon"><Icon name="share" /></span><span>Otwórz Razem w Safari i naciśnij <strong>Udostępnij</strong> na dolnym pasku.</span></li>
@@ -118,6 +126,22 @@ export function InstallScreen() {
       <Notice tone="info" title="Dlaczego z ekranu początkowego?">
         Na iPhonie powiadomienia działają tylko w aplikacji dodanej do ekranu początkowego. Safari nie pokazuje osobnego przycisku instalacji.
       </Notice>
+      <Notice tone={pwa === 'ready' || pwa === 'update' ? 'success' : 'warning'} title={pwa === 'ready' || pwa === 'update' ? 'Aplikacja gotowa do uruchamiania offline' : 'Przygotowanie do pracy offline'}>
+        {pwa === 'unavailable' ? 'Nie udało się przygotować aplikacji. Otwórz ją ponownie przy działającym połączeniu. Wymagane jest bezpieczne połączenie.' : 'Pierwszy raz otwórz aplikację z internetem, zaloguj się i poczekaj na „Zsynchronizowano”. Po instalacji ponownie otwórz ją ikoną przy działającym internecie i sprawdź ten komunikat. Potem możesz zamknąć ją i uruchomić bez sieci.'}
+      </Notice>
+      <StorageNotice />
     </>
   );
+}
+
+function StorageNotice() {
+  const persistence = useSyncExternalStore(subscribePersistence, persistenceSnapshot);
+  return <Notice tone="info" title="Dane na tym urządzeniu">
+    {persistence === 'granted' ? 'Przeglądarka przyznała ochronę magazynu przed automatycznym usuwaniem. '
+      : persistence === 'denied' ? 'Przeglądarka nie przyznała trwałego magazynu. '
+      : persistence === 'unsupported' ? 'Ta przeglądarka nie udostępnia ochrony magazynu. '
+      : persistence === 'unavailable' ? 'Nie udało się sprawdzić ochrony magazynu. '
+      : 'Po otwarciu konta poprosimy przeglądarkę o ochronę magazynu. '}
+    Usunięcie danych witryny lub utrata urządzenia może usunąć niewysłane zmiany. Synchronizuj regularnie i w razie problemów eksportuj niewysłane zmiany.
+  </Notice>;
 }
