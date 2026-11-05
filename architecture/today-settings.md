@@ -48,12 +48,14 @@ Motyw pozostaje preferencją urządzenia w razem:theme, stosowaną przed rendere
 Strefa domu zmienia grupowanie godzinowych wydarzeń, „dziś” kalendarza/ważnych dat
 oraz domyślną strefę nowych wydarzeń i zadań. Nie przelicza zapisanych UTC,
 date-only ani harmonogramów zadań; edycja używa strefy istniejącego wpisu.
-Przyszły worker używa strefy domu dla ważnych dat (RAZ-12).
+Worker używa strefy domu dla ważnych dat (RAZ-12).
 
 Preferencje konta: tytuły na ekranie blokady i zmiany zakupów, domyślnie false.
 Opis tytułów wyjaśnia widoczność prywatnych/wspólnych tytułów na blokadzie telefonu.
-Włączenie wysyłki jest uczciwie niedostępne do RAZ-12; nie prosimy o systemową zgodę
-ani nie udajemy subskrypcji. Od RAZ-13 pełny eksport własnych i wspólnych danych pobiera JSON z `/api/export`
+Od RAZ-12 wysyłkę włącza się osobno na każdym urządzeniu, wyłącznie po kliknięciu.
+Preferencje terminów/przypisań zadań i ich godzina/wyprzedzenie są edytowalne.
+Nowe pola settings/eksportu wymagają nagłówka `x-razem-notifications: 1`, dzięki czemu
+starsza strict PWA zachowuje swój kontrakt. Mechanizm i granice: [push.md](push.md). Od RAZ-13 pełny eksport własnych i wspólnych danych pobiera JSON z `/api/export`
 (wymaga połączenia). Osobny eksport niewysłanych intencji i pełnych konfliktów działa
 offline, w formacie pending v2; nie kasuje kolejki. Pliki są związane z kontem
 i generacją widoku. Szczegóły: [backup.md](../operations/backup.md).

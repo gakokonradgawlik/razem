@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AccountRepository, migrate, openDatabase, PushSubscriptions, RecordRepository } from '@razem/db';
 import type { Database, PushTransport } from '@razem/db';
+import { dispatchSchema } from '@razem/contracts/server';
 import type { AccountScope } from '@razem/contracts';
 import { ReminderWorker } from './worker.js';
 
@@ -43,6 +44,9 @@ it('pełny skan starszych zadań, restart i dwa połączenia planują jeden disp
   const t = create('task', task);
   db.sqlite.prepare('DELETE FROM task_events').run(); // pre-RAZ-8 records have no semantic events
   worker.plan(); expect(jobs()).toHaveLength(1); expect(jobs()[0]).toMatchObject({ user_id: A.userId, scheduled_at: '2026-11-05T08:00:00.000Z' });
+  const persisted = db.sqlite.prepare('SELECT * FROM reminder_dispatches').get() as Record<string, unknown>;
+  const projection = Object.fromEntries(Object.entries(persisted).map(([key, value]) => [key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()), value]));
+  expect(dispatchSchema.safeParse(projection).success).toBe(true);
   db.close(); db = openDatabase(join(dir, 'db.sqlite')); open.push(db);
   const other = openDatabase(db.path); open.push(other);
   worker = new ReminderWorker(db, send, clock); const second = new ReminderWorker(other, send, clock);
