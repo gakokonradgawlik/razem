@@ -16,6 +16,8 @@ to najstarsza nieukończona data harmonogramu, również zaległa. Ukończenie t
 `task_occurrence`; cofnięcie ustawia jego `completedAt=null`. Ukończone terminy są
 widoczne w szczegółach, także po zmianie reguły. Filtr ukończonych pokazuje szablon
 z ostatnim ukończonym terminem; szczegóły pozwalają przywrócić każdy termin.
+Pusty harmonogram zatrzymany przed pierwszym terminem jest także dostępny w Ukończonych
+z etykietą „Harmonogram zakończony”, bez sztucznego ukończenia.
 
 Klucz `(taskId, occurrenceKey)` jest unikalny w SQLite. Nowy klient oblicza stały UUID
 z SHA256 przestrzeni `razem:task-occurrence:v1:<taskId>:<YYYY-MM-DD>` (122 bity hasha,
@@ -43,7 +45,8 @@ Formularz przy zmianie dnia/godziny/reguły wymaga przyszłego dnia „Nowy harm
 Wcześniejsze segmenty i ich zaległe terminy pozostają. Wyłączenie powtarzania ustawia
 `until`, pozostawiając historię. Sama edycja tekstu lub przypisania nie zmienia reguły.
 Serwer i local store weryfikują, że historia przed wskazaną granicą jest dokładnie
-historią poprzedniego szablonu i granica jest po początku obecnego segmentu.
+historią poprzedniego szablonu. Przyszły pierwszy termin można też przesunąć
+lub zatrzymać przed rozpoczęciem (pusty segment z until=startDate).
 Serwer nie porównuje granicy z dniem dostarczenia: poprawna zmiana offline może dotrzeć
 po jej wejściu w życie. UI wymaga przyszłej daty w chwili edycji. Ukończenia pozostają
 osobnymi rekordami; stare daty można cofnąć. Usunięcie szablonu ukrywa lokalnie dzieci,

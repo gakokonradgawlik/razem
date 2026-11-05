@@ -24,7 +24,7 @@ async function sync(p: Page) {
   await expect(p.getByRole('button', { name: 'Synchronizuj teraz', exact: true })).toBeEnabled();
   await expect(badge(p)).toContainText('Zsynchronizowano', { timeout: 20_000 });
 }
-async function create(p: Page, title: string, repeat = false, secret = false) {
+async function create(p: Page, title: string, repeat = false, secret = false, date = '2026-01-31') {
   await p.goto('/zadania/nowe');
   await p.getByLabel('Tytuł', { exact: true }).fill(title);
   await p.getByLabel('Opis (opcjonalnie)').fill('Sprawdzić wszystkie paprocie');
@@ -34,7 +34,7 @@ async function create(p: Page, title: string, repeat = false, secret = false) {
     await expect(p.getByLabel('Kto to zrobi?').getByRole('option', { name: 'Druga osoba' })).toBeDisabled();
     await expect(p.getByLabel('Kto to zrobi?').getByRole('option', { name: 'Oboje' })).toBeDisabled();
   }
-  await p.getByLabel('Termin – dzień').fill('2026-01-31');
+  await p.getByLabel('Termin – dzień').fill(date);
   if (repeat) await p.getByLabel('Powtarzaj').selectOption('monthly');
   await p.getByRole('button', { name: 'Zapisz' }).click();
   await expect(p).toHaveURL(ORIGIN + '/zadania');
@@ -142,5 +142,24 @@ test('cykliczne: dwa telefony odhaczają ten sam termin; jeden następny, Cofnij
     await expect(b.getByRole('button', { name: 'Przywróć termin 2026-01-31', exact: true })).toHaveCount(1);
     await b.goto('/zadania'); await b.getByRole('radio', { name: 'Ukończone', exact: true }).click();
     await expect(b.getByRole('link', { name: new RegExp(title) })).toBeVisible();
+    const futureTitle = `Przyszły ${title}`;
+    const futurePath = await create(a, futureTitle, true, false, '2030-01-31');
+    await a.getByRole('link', { name: 'Edytuj', exact: true }).click();
+    await a.getByLabel('Powtarzaj').selectOption('weekly');
+    await a.getByRole('button', { name: 'Zapisz' }).click();
+    await expect(a).toHaveURL(ORIGIN + futurePath);
+    await a.getByRole('link', { name: 'Edytuj', exact: true }).click();
+    await a.getByLabel('Powtarzaj').selectOption('none');
+    await a.getByRole('button', { name: 'Zapisz' }).click();
+    await expect(a).toHaveURL(ORIGIN + futurePath);
+    await expect(a.getByText('Harmonogram zakończony', { exact: true })).toHaveCount(2);
+    await sync(a); await sync(b); await b.goto('/zadania');
+    await b.getByRole('radio', { name: 'Ukończone', exact: true }).click();
+    await b.getByRole('link', { name: new RegExp(futureTitle) }).click();
+    await expect(b).toHaveURL(ORIGIN + futurePath);
+    await b.getByRole('link', { name: 'Edytuj', exact: true }).click();
+    await b.getByLabel('Powtarzaj').selectOption('daily');
+    await b.getByRole('button', { name: 'Zapisz' }).click();
+    await expect(b.getByRole('button', { name: 'Ukończ termin 2030-01-31', exact: true })).toBeVisible();
   } finally { await ac.close(); await bc.close(); }
 });

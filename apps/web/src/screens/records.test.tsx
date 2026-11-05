@@ -70,7 +70,7 @@ function memoryServices(records = fixtures) {
   const services = {
     ...unavailableServices,
     listRecords: vi.fn<AppServices['listRecords']>(async ({ entityType, parentId }) => ({ status: 'ok', value: records.filter((record) =>
-      record.entityType === entityType && (!parentId || record.data.listId === parentId)) })),
+      record.entityType === entityType && (!parentId || record.data.listId === parentId || record.data.taskId === parentId)) })),
     getRecord: vi.fn<AppServices['getRecord']>(async (entityType, recordId) => {
       const found = records.find((record) => record.id === recordId && record.entityType === entityType);
       return found ? { status: 'ok', value: found } : { status: 'not_found' };
@@ -309,4 +309,34 @@ it('dane niezgodne z kontraktem nie są wyświetlane', async () => {
   expect(await screen.findByText('Nie można wyświetlić wpisu')).toBeTruthy();
   go('/notatki');
   expect(await screen.findByText('Brak notatek')).toBeTruthy();
+});
+
+it('zadanie z zakończonym harmonogramem i wszystkimi ukończeniami nie jest zaległe; historia nadal pozwala cofnąć termin', async () => {
+  const services = memoryServices([
+    rec(TASK, 'task', { title: 'Zakończony obowiązek', description: '', assignee: 'both', dueDate: '2026-01-31', dueAt: null,
+      timezone: 'Europe/Warsaw', completedAt: null, recurrence: { frequency: 'daily', interval: 1, startDate: '2026-01-31', until: '2026-02-01', time: null } }),
+    rec(id(90), 'task_occurrence', { taskId: TASK, occurrenceKey: '2026-01-31', completedAt: '2026-01-31T08:00:00Z' }),
+  ]);
+  render(<App services={services} />);
+  go(`/zadania/${TASK}`);
+  await waitFor(() => expect(screen.getAllByText('Harmonogram zakończony')).toHaveLength(2));
+  expect(screen.queryByText('Zaległe', { exact: true })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Przywróć termin 2026-01-31' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /^Ukończ termin/ })).toBeNull();
+  go('/zadania');
+  fireEvent.click(await screen.findByRole('radio', { name: 'Zaległe' }));
+  expect(await screen.findByText('Nic zaległego')).toBeTruthy();
+  fireEvent.click(screen.getByRole('radio', { name: 'Ukończone' }));
+  expect(await screen.findByRole('link', { name: /Zakończony obowiązek/ })).toBeTruthy();
+});
+
+it('harmonogram zatrzymany przed pierwszym terminem pozostaje dostępny w Ukończonych', async () => {
+  const services = memoryServices([rec(TASK, 'task', { title: 'Zatrzymany przed startem', description: '', assignee: 'both', dueDate: '2030-01-31', dueAt: null,
+    timezone: 'Europe/Warsaw', completedAt: null, recurrence: { frequency: 'daily', interval: 1, startDate: '2030-01-31', until: '2030-01-31', time: null } })]);
+  render(<App services={services} />);
+  go('/zadania');
+  fireEvent.click(await screen.findByRole('radio', { name: 'Ukończone' }));
+  fireEvent.click(await screen.findByRole('link', { name: /Zatrzymany przed startem/ }));
+  await waitFor(() => expect(screen.getAllByText('Harmonogram zakończony')).toHaveLength(2));
+  expect(screen.getByRole('link', { name: 'Edytuj' })).toBeTruthy();
 });

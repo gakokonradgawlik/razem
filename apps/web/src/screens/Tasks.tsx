@@ -42,7 +42,9 @@ function projected(task: Task, occurrences: Typed<'task_occurrence'>[], done = f
   const completed = occurrences.filter((o) => o.data.taskId === task.id && o.data.completedAt);
   if (done) {
     const last = completed.sort((a, b) => b.data.occurrenceKey.localeCompare(a.data.occurrenceKey))[0];
-    return last ? { ...task, data: { ...task.data, ...(taskOccurrence(task.data, last.data.occurrenceKey) ?? { dueDate: last.data.occurrenceKey, dueAt: null }), completedAt: last.data.completedAt } } : null;
+    if (last) return { ...task, data: { ...task.data, ...(taskOccurrence(task.data, last.data.occurrenceKey) ?? { dueDate: last.data.occurrenceKey, dueAt: null }), completedAt: last.data.completedAt } };
+    return task.data.recurrence.until && !nextTaskOccurrence(task.data, new Set())
+      ? { ...task, data: { ...task.data, dueDate: null, dueAt: null } } : null;
   }
   const next = nextTaskOccurrence(task.data, new Set(completed.map((o) => o.data.occurrenceKey)));
   return next ? { ...task, data: { ...task.data, ...next, completedAt: null } } : null;
@@ -51,7 +53,7 @@ const matches: Record<Filter, (task: Task) => boolean> = {
   mine: (task) => !task.data.completedAt && assignedToMe(task),
   shared: (task) => !task.data.completedAt && task.visibility === 'shared',
   overdue: (task) => isOverdue(task),
-  done: (task) => task.data.completedAt !== null,
+  done: (task) => task.data.completedAt !== null || !!task.data.recurrence?.until,
 };
 
 export function TasksScreen() {
@@ -70,8 +72,8 @@ export function TasksScreen() {
           : tasks.length === 0 ? <EmptyState icon="tasks" {...emptyCopy[filter]} action={{ label: 'Dodaj zadanie', to: '/zadania/nowe' }} />
             : <List label="Zadania">
               {tasks.map((task) => (
-                <ListRow key={task.id} to={pathFor(taskPaths.detail, { taskId: task.id })} icon={task.data.completedAt ? 'check' : 'tasks'} iconTone={isOverdue(task) ? 'red' : 'blue'}
-                  title={task.data.title} detail={[dueLabel(task), assigneeLabel(task)].filter(Boolean).join(' · ')} value={<PrivacyTag value={task.visibility} />} />
+                <ListRow key={task.id} to={pathFor(taskPaths.detail, { taskId: task.id })} icon={filter === 'done' ? 'check' : 'tasks'} iconTone={isOverdue(task) ? 'red' : 'blue'}
+                  title={task.data.title} detail={[dueLabel(task), filter === 'done' && !task.data.completedAt ? 'Harmonogram zakończony' : null, assigneeLabel(task)].filter(Boolean).join(' · ')} value={<PrivacyTag value={task.visibility} />} />
               ))}
             </List>}
       </Section>
@@ -124,9 +126,9 @@ function TaskDetail({ task, reload }: { task: Task; reload: () => void }) {
         <DetailFields rows={[
           { label: 'Widoczność', value: <PrivacyTag value={task.visibility} /> },
           { label: 'Kto to zrobi?', value: assigneeLabel(task) },
-          { label: 'Termin', value: task.data.recurrence && !current ? 'Harmonogram zakończony' : dueLabel(shown) ?? 'Bez terminu' },
+          { label: 'Termin', value: task.data.recurrence && rows && !current ? 'Harmonogram zakończony' : dueLabel(shown) ?? 'Bez terminu' },
           ...(task.data.recurrence ? [{ label: 'Powtarzaj', value: repeatLabel[task.data.recurrence.frequency] }] : []),
-          { label: 'Stan', value: done ? 'Ukończone' : isOverdue(shown) ? 'Zaległe' : 'Do zrobienia' },
+          { label: 'Stan', value: task.data.recurrence && rows && !current ? 'Harmonogram zakończony' : done ? 'Ukończone' : isOverdue(shown) ? 'Zaległe' : 'Do zrobienia' },
           ...(task.data.description ? [{ label: 'Opis', value: <span className="prewrap">{task.data.description}</span> }] : []),
         ]} />
       </Section>

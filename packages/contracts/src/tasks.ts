@@ -55,7 +55,8 @@ export function taskOverdue(task: Pick<TaskData, 'dueDate' | 'dueAt' | 'timezone
 export function rescheduleTask(task: TaskData, from: string, frequency: Recurrence['frequency'] | null, time: string | null, timezone = task.timezone): TaskData {
   const history = segments(task).filter((r) => r.startDate < from).map((r) => ({ ...r, until: r.until && r.until < from ? r.until : from }));
   if (!frequency) {
-    const last = history.pop();
+    const first = segments(task)[0];
+    const last = history.pop() ?? (first ? { ...first, until: first.startDate } : null);
     if (!last) throw new RangeError('Brak wcześniejszego harmonogramu');
     return { ...task, dueDate: last.time ? null : last.startDate, dueAt: last.time ? localTimeToInstant(last.startDate, last.time, last.timezone) : null,
       timezone: last.timezone, recurrence: { frequency: last.frequency, interval: last.interval, startDate: last.startDate, until: last.until, time: last.time, history } };
@@ -72,7 +73,6 @@ export function validTaskScheduleChange(before: TaskData, after: TaskData): bool
   if (!next) return false;
   const stopped = !!next.until;
   const from = stopped ? next.until! : next.startDate;
-  if (from <= before.recurrence.startDate) return false;
   // The server cannot use today's date: a valid offline command may be delivered days later.
   // Immutable history proves that all earlier dates retain their original schedule.
   const expected = rescheduleTask(before, from, stopped ? null : next.frequency, next.time !== undefined ? next.time : after.dueAt ? localTime(after.dueAt, after.timezone) : null, after.timezone);

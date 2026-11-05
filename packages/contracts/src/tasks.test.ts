@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { nextTaskOccurrence, taskOccurrence, taskOverdue, rescheduleTask, validTaskScheduleChange, taskReminderAt, taskOccurrenceId, taskRecipients, localTimeToInstant, taskDataSchema } from './index.js';
+import { nextTaskOccurrence, taskOccurrence, taskOverdue, rescheduleTask, validTaskScheduleChange, taskReminderAt, taskOccurrenceId, taskRecipients, localTimeToInstant, taskDataSchema, mutationSchema } from './index.js';
 import type { TaskData } from './index.js';
 
 const task = (startDate = '2026-01-31', frequency: 'daily' | 'weekly' | 'monthly' = 'monthly', time: string | null = null): TaskData => ({
@@ -54,4 +54,23 @@ it('to samo taskId i nominalny dzień mają ten sam UUID na dwóch telefonach; o
   expect(await taskOccurrenceId(id, '2026-11-06')).not.toBe(await taskOccurrenceId(id, '2026-11-05'));
   expect(taskRecipients({ ownerId: 'a', visibility: 'shared', data: { assignee: 'partner' } }, ['a','b'])).toEqual(['b']);
   expect(taskRecipients({ ownerId: 'a', visibility: 'private', data: { assignee: 'both' } }, ['a','b'])).toEqual(['a']);
+});
+
+it('niepoprawna strefa/reguła zwracają błąd walidacji bez wyjątku', () => {
+  const probe = { clientMutationId: crypto.randomUUID(), entityId: crypto.randomUUID(), entityType: 'task', command: 'create', baseVersion: 0, visibility: 'shared',
+    data: { ...task('2026-03-29', 'daily', '02:30'), timezone: 'Nie/Istnieje' } };
+  expect(() => mutationSchema.safeParse(probe)).not.toThrow();
+  expect(mutationSchema.safeParse(probe).success).toBe(false);
+});
+
+it('przyszły pierwszy termin można zmienić przed rozpoczęciem lub zatrzymać bez tworzenia wystąpienia', () => {
+  const before = task('2030-01-31');
+  for (const from of ['2030-01-31', '2030-01-15']) {
+    const after = taskDataSchema.parse(rescheduleTask(before, from, 'weekly', null));
+    expect(validTaskScheduleChange(before, after)).toBe(true);
+    expect(nextTaskOccurrence(after, new Set())?.occurrenceKey).toBe(from);
+    const stopped = taskDataSchema.parse(rescheduleTask(before, from, null, null));
+    expect(validTaskScheduleChange(before, stopped)).toBe(true);
+    expect(nextTaskOccurrence(stopped, new Set())).toBeNull();
+  }
 });
