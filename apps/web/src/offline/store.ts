@@ -217,6 +217,7 @@ export class LocalStore {
       const result = input.id ? await this.update(input.entityType, id, input.data)
         : await this.createWithId(input.entityType, id, input.data, input.visibility);
       if (!result.ok) throw new Abort(result.reason);
+      if (!input.reminder) return { ok: true, value: undefined };
       const reminders = (await this.db.records.where('parentId').equals(id).toArray()).filter((r) => r.entityType === 'reminder' && r.deletedAt === null);
       const data = { targetType: input.entityType, targetId: id, ...input.reminder };
       // Keep legacy reminder IDs; disable any additional legacy configurations explicitly.

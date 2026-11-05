@@ -47,7 +47,8 @@ export type TrashItem = { id: string; entityType: EntityType; title: string; del
 export type CalendarSave = {
   entityType: 'calendar_event' | 'important_date'; id?: string; visibility: Visibility;
   data: Record<string, unknown>;
-  reminder: { enabled: boolean; minutesBefore: number; localTime: string | null };
+  /** Omitted on edit when the configuration was not changed in the form. */
+  reminder?: { enabled: boolean; minutesBefore: number; localTime: string | null };
 };
 
 export interface AppServices {

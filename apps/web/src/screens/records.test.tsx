@@ -376,3 +376,14 @@ it('kalendarz: strefa i rozwiązanie luki DST walidowane przy polu bez utraty na
   expect(await screen.findByText('Podaj poprawną strefę, np. Europe/Warsaw.')).toBeTruthy();
   expect((screen.getByLabelText('Nazwa') as HTMLInputElement).value).toBe('W luce czasu');
 });
+
+it('edycja kalendarza wysyła tylko zmienione pola i zachowuje równoczesne ustawienie przypomnienia', async () => {
+  const reminder = rec(id(90), 'reminder', { targetType: 'calendar_event', targetId: EVENT, enabled: true, minutesBefore: 60, localTime: '10:00' });
+  const services = { ...memoryServices([...fixtures, reminder]), saveCalendar: vi.fn<NonNullable<AppServices['saveCalendar']>>(async () => ({ ok: true })) };
+  // The reminder query is scoped by its target (the actual services adapter applies this query).
+  services.listRecords.mockImplementation(async ({ entityType }) => ({ status: 'ok', value: [...fixtures, reminder].filter((r) => r.entityType === entityType) }));
+  render(<App services={services} />); go(`/kalendarz/${EVENT}/edycja`);
+  fireEvent.change(await screen.findByLabelText('Nazwa'), { target: { value: 'Nowy tytuł wyjazdu' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  await waitFor(() => expect(services.saveCalendar).toHaveBeenCalledWith({ entityType: 'calendar_event', id: EVENT, data: { title: 'Nowy tytuł wyjazdu' }, visibility: 'shared' }));
+});

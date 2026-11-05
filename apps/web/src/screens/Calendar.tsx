@@ -23,7 +23,7 @@ export function eventWhen(event: CalendarEvent): string {
     const last = addDays(data.endDate, -1);
     return last === data.startDate ? `${formatIsoDate(data.startDate)}, cały dzień` : `${formatIsoDate(data.startDate)} – ${formatIsoDate(last)}`;
   }
-  return data.startAt && data.endAt ? `${formatInstant(data.startAt, data.timezone)} – ${formatInstant(data.endAt, data.timezone)}` : '';
+  return data.startAt && data.endAt ? `${formatInstant(data.startAt, data.timezone)} – ${formatInstant(data.endAt, data.timezone)} (${data.timezone})` : '';
 }
 type CalendarEntry = { key: string; title: string; start: string; end: string; when: string; to: string; visibility: Visibility; instant: string };
 function entries(events: CalendarEvent[], dates: Typed<'important_date'>[], from: string, year?: number): CalendarEntry[] {
@@ -113,8 +113,8 @@ function initialEvent(mode: FormMode<'calendar_event'>): EventForm {
 }
 
 function EventFormScreen({ mode, initialReminder }: { mode: FormMode<'calendar_event'>; initialReminder?: ReminderConfig | undefined }) {
-  const save = useCalendarPersist('calendar_event', mode);
   const [reminder, setReminder] = useReminder(initialReminder, mode.kind === 'create' || !mode.record.data.allDay);
+  const save = useCalendarPersist('calendar_event', mode, reminder);
   const editing = mode.kind === 'edit' ? mode.record : null;
 
   const back = editing ? pathFor(eventPaths.detail, { eventId: editing.id }) : '/kalendarz';

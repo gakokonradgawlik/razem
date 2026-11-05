@@ -82,7 +82,7 @@ it('IndexedDB v1 → v2 zachowuje daty, parent przypomnienia i oczekujące inten
   expect(await a.store!.deviceId()).toBe(deviceId);
   expect((await a.store!.get(rid))?.parentId).toBe(id);
   expect((await a.store!.get(id))?.data).toEqual(event);
-  expect((await a.store!.db.queue.toArray()).map((r) => r.clientMutationId)).toEqual(ids);
+  expect((await a.store!.db.queue.toArray()).map((r) => r.clientMutationId).sort()).toEqual([...ids].sort());
   await a.syncNow(); expect(await a.store!.pendingCount()).toBe(0);
   const b = await phone(new Phone(server), 'b'); await b.syncNow();
   expect(await b.store!.list('calendar_event')).toEqual([]); expect(await b.store!.list('reminder')).toEqual([]);

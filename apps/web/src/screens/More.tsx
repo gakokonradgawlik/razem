@@ -150,8 +150,8 @@ const MONTHS = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'l
 const MAX_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 function ImportantDateFormScreen({ mode, initialReminder }: { mode: FormMode<'important_date'>; initialReminder?: ReminderConfig | undefined }) {
-  const save = useCalendarPersist('important_date', mode);
   const [reminder, setReminder] = useReminder(initialReminder);
+  const save = useCalendarPersist('important_date', mode, reminder);
   const editing = mode.kind === 'edit' ? mode.record : null;
   const back = editing ? pathFor(datePaths.detail, { dateId: editing.id }) : '/wazne-daty';
   const { values, set } = useFormValues<DateForm>(editing
