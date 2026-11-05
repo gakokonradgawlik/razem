@@ -14,7 +14,7 @@ Zadania działają lokalnie i synchronizują się z drugim kontem. Wspólne zada
 przypisać sobie, drugiej osobie lub obojgu; prywatne tylko sobie. Zadanie cykliczne
 pokazuje najstarszy nieukończony termin. Szczegóły zawierają historię i przyciski
 cofnięcia ukończeń. Zmianę reguły/godziny wprowadza się od przyszłego dnia,
-bez usuwania wcześniejszych zaległości. Zobacz [architecture/tasks.md](architecture/tasks.md).
+bez usuwania wcześniejszych zaległości. Zobacz [architecture/tasks.md](architecture/tasks.md) i dowody [quality/raz-8.md](quality/raz-8.md).
 
 Po aktualizacji z wersji sprzed RAZ-8 stara PWA pokaże potrzebę aktualizacji sync:
 zapisz formularze, zamknij wszystkie okna Razem i otwórz ponownie. Oczekujące zmiany
