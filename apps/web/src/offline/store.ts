@@ -6,8 +6,9 @@
 // - a pulled server version never overwrites a record with local changes (dirty):
 //   it only becomes the new base, so the queued intent meets the server version check;
 // - conflicts keep the local intent, its base and the server state until the user decides.
-import { taskOccurrence, taskOccurrenceId, taskDataSchema, validTaskScheduleChange, canReadRecord, IMMUTABLE_PARENT_FIELDS, mutationSchema, recordSchemaUnion } from '@razem/contracts';
+import { calendarReminderId, taskOccurrence, taskOccurrenceId, taskDataSchema, validTaskScheduleChange, canReadRecord, IMMUTABLE_PARENT_FIELDS, mutationSchema, recordSchemaUnion } from '@razem/contracts';
 import type { AccountScope, EntityType, Mutation, PullResponse, PushResponse, SyncRecord } from '@razem/contracts';
+import type { CalendarSave } from '../services.js';
 import { LocalDatabase, parentOf } from '../local-db.js';
 import type { Command, ConflictEntry, LocalRecord, QueueEntry, ServerState, Visibility } from '../local-db.js';
 
@@ -132,9 +133,9 @@ export class LocalStore {
   // ---------- Queries ----------
 
   private async shoppingParentActive(record: LocalRecord): Promise<boolean> {
-    if (record.entityType !== 'shopping_item' && record.entityType !== 'task_occurrence') return true;
+    if (!isChildType(record.entityType)) return true;
     const parent = record.parentId ? await this.db.records.get(record.parentId) : undefined;
-    return !!parent && parent.entityType === (record.entityType === 'task_occurrence' ? 'task' : 'shopping_list') && parent.deletedAt === null && canReadRecord(this.scope, parent);
+    return !!parent && parent.entityType === (record.entityType === 'reminder' ? record.data.targetType : record.entityType === 'task_occurrence' ? 'task' : 'shopping_list') && parent.deletedAt === null && canReadRecord(this.scope, parent);
   }
 
   async list(entityType: EntityType, parentId?: string): Promise<LocalRecord[]> {
@@ -175,6 +176,7 @@ export class LocalStore {
       if (isChildType(entityType)) {
         const parent = parentId ? await this.db.records.get(parentId) : undefined;
         if (!parent || parent.deletedAt !== null || !canReadRecord(this.scope, parent)) throw new Abort('not_found');
+        if (entityType === 'reminder' && parent.entityType !== data.targetType) throw new Abort('not_found');
         if (entityType === 'shopping_item' && parent.entityType !== 'shopping_list') throw new Abort('not_found');
         if (entityType === 'task_occurrence' && (parent.entityType !== 'task' || !taskOccurrence(taskDataSchema.parse(parent.data), String(data.occurrenceKey)))) throw new Abort('invalid');
         scopeVisibility = parent.visibility;
@@ -203,6 +205,31 @@ export class LocalStore {
       const base = await this.baseFor(record);
       await this.db.records.put({ ...record, data: merged, updatedAt: new Date().toISOString() });
       await this.enqueue({ entityType, entityId: id, parentId: record.parentId, command: 'update', patch: changed }, base);
+      return { ok: true, value: undefined };
+    });
+  }
+
+  /** Parent, reminder configuration and both intents commit together, including on quota failure. */
+  async saveCalendar(input: CalendarSave): Promise<StoreResult> {
+    const id = input.id ?? crypto.randomUUID();
+    const reminderId = await calendarReminderId(id);
+    return this.guarded(async () => {
+      const result = input.id ? await this.update(input.entityType, id, input.data)
+        : await this.createWithId(input.entityType, id, input.data, input.visibility);
+      if (!result.ok) throw new Abort(result.reason);
+      const reminders = (await this.db.records.where('parentId').equals(id).toArray()).filter((r) => r.entityType === 'reminder' && r.deletedAt === null);
+      const data = { targetType: input.entityType, targetId: id, ...input.reminder };
+      // Keep legacy reminder IDs; disable any additional legacy configurations explicitly.
+      const existing = reminders[0];
+      if (existing || input.reminder.enabled) {
+        const saved = existing ? await this.update('reminder', existing.id, input.reminder)
+          : await this.createWithId('reminder', reminderId, data);
+        if (!saved.ok) throw new Abort(saved.reason);
+      }
+      for (const extra of reminders.slice(1)) {
+        const saved = await this.update('reminder', extra.id, { enabled: false });
+        if (!saved.ok) throw new Abort(saved.reason);
+      }
       return { ok: true, value: undefined };
     });
   }

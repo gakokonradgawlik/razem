@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { defaultVisibility } from '@razem/contracts';
+import { defaultVisibility, nextImportantOccurrence } from '@razem/contracts';
 import type { EntityType } from '@razem/contracts';
 import { AddButton, Button, EmptyState, Notice, List, ListRow, PrivacyPicker, PrivacyTag, ScreenHeader, Section, SelectField, TextArea, TextField } from '../ui/components.js';
 import { FormScreen, useFormValues } from '../ui/form.js';
@@ -8,9 +8,11 @@ import { pathFor, useParam } from '../router.js';
 import { failureMessage, useServices } from '../services.js';
 import type { TrashItem, Visibility } from '../services.js';
 import { contractData, maxText, requiredText } from './validation.js';
-import { formatDayMonth } from '../dates.js';
+import { formatDayMonth, isoDate, todayIn } from '../dates.js';
 import { DeleteRecord, DetailFields, EditLink, FixedPrivacy, LoadingNotice, RecordGate, loaded, persist, useLoad, useRecords } from './records.js';
 import type { FormMode, Typed } from './records.js';
+import { ReminderDetail, ReminderFields, ReminderGate, useCalendarPersist, useReminder, yearsLabel } from './calendar-shared.js';
+import type { ReminderConfig } from './calendar-shared.js';
 
 export const notePaths = { detail: '/notatki/:noteId', edit: '/notatki/:noteId/edycja' } as const;
 export const datePaths = { detail: '/wazne-daty/:dateId', edit: '/wazne-daty/:dateId/edycja' } as const;
@@ -134,7 +136,7 @@ export function ImportantDatesScreen() {
             : <List label="Ważne daty">
               {dates.map((date) => (
                 <ListRow key={date.id} to={pathFor(datePaths.detail, { dateId: date.id })} icon="heart" iconTone="pink" title={date.data.name}
-                  detail={`${formatDayMonth(date.data.month, date.data.day)} · ${kindLabel[date.data.kind]}`} value={<PrivacyTag value={date.visibility} />} />
+                  detail={`${formatDayMonth(date.data.month, date.data.day)} · ${kindLabel[date.data.kind]}${yearsLabel(nextImportantOccurrence(date.data, isoDate(todayIn())).years)}`} value={<PrivacyTag value={date.visibility} />} />
               ))}
             </List>}
       </Section>
@@ -147,8 +149,9 @@ type DateForm = { name: string; kind: Kind; month: string; day: string; startYea
 const MONTHS = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
 const MAX_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-function ImportantDateFormScreen({ mode }: { mode: FormMode<'important_date'> }) {
-  const services = useServices();
+function ImportantDateFormScreen({ mode, initialReminder }: { mode: FormMode<'important_date'>; initialReminder?: ReminderConfig | undefined }) {
+  const save = useCalendarPersist('important_date', mode);
+  const [reminder, setReminder] = useReminder(initialReminder);
   const editing = mode.kind === 'edit' ? mode.record : null;
   const back = editing ? pathFor(datePaths.detail, { dateId: editing.id }) : '/wazne-daty';
   const { values, set } = useFormValues<DateForm>(editing
@@ -165,9 +168,9 @@ function ImportantDateFormScreen({ mode }: { mode: FormMode<'important_date'> })
   };
   return (
     <FormScreen title={editing ? 'Edytuj ważną datę' : 'Nowa ważna data'} cancelTo={back} doneTo={back} errors={errors} setErrors={setErrors} validate={validate}
-      onSubmit={() => persist(services, 'important_date', mode, contractData('important_date', {
+      onSubmit={() => save(contractData('important_date', {
         name: values.name.trim(), kind: values.kind, month: Number(values.month), day: Number(values.day), startYear: values.startYear.trim() ? Number(values.startYear) : null,
-      }), values.visibility)}>
+      }), values.visibility, { ...reminder, localTime: reminder.localTime ?? '09:00' })}>
       <div className="group">
         <TextField label="Nazwa" value={values.name} onValue={set('name')} error={errors.name} placeholder="np. Urodziny Mamy" autoComplete="off" maxLength={400} />
         <SelectField<Kind> label="Rodzaj" value={values.kind} onValue={set('kind')} options={[{ value: 'birthday', label: 'Urodziny' }, { value: 'anniversary', label: 'Rocznica' }, { value: 'other', label: 'Inne' }]} />
@@ -180,6 +183,7 @@ function ImportantDateFormScreen({ mode }: { mode: FormMode<'important_date'> })
         <TextField label="Rok początkowy (opcjonalnie)" value={values.startYear} onValue={set('startYear')} error={errors.startYear} inputMode="numeric" autoComplete="off" maxLength={4}
           hint="Pozwala pokazać, która to rocznica lub ile lat kończy osoba. 29 lutego w zwykłym roku przypada 28 lutego." />
       </div>
+      <ReminderFields value={reminder} onChange={setReminder} />
       <div className="group">{editing ? <FixedPrivacy value={editing.visibility} /> : <PrivacyPicker subject="tę datę" value={values.visibility} onChange={set('visibility')} />}</div>
     </FormScreen>
   );
@@ -190,7 +194,7 @@ export function EditImportantDateScreen() {
   const dateId = useParam('dateId');
   return (
     <RecordGate entityType="important_date" id={dateId} title="Edytuj ważną datę" back={{ to: pathFor(datePaths.detail, { dateId }), label: 'Ważna data' }}>
-      {(record) => <ImportantDateFormScreen mode={{ kind: 'edit', record }} />}
+      {(record) => <ReminderGate id={record.id}>{(reminder) => <ImportantDateFormScreen mode={{ kind: 'edit', record }} initialReminder={reminder} />}</ReminderGate>}
     </RecordGate>
   );
 }
@@ -207,10 +211,12 @@ export function ImportantDateDetailScreen() {
             <DetailFields rows={[
               { label: 'Data', value: `${formatDayMonth(date.data.month, date.data.day)}, co roku` },
               { label: 'Rodzaj', value: kindLabel[date.data.kind] },
+              { label: 'Najbliższe wystąpienie', value: `${nextImportantOccurrence(date.data, isoDate(todayIn())).date}${yearsLabel(nextImportantOccurrence(date.data, isoDate(todayIn())).years)}` },
               ...(date.data.startYear ? [{ label: 'Rok początkowy', value: String(date.data.startYear) }] : []),
               { label: 'Widoczność', value: <PrivacyTag value={date.visibility} /> },
             ]} />
           </Section>
+          <ReminderDetail type="important_date" id={date.id} />
           <Section><DeleteRecord entityType="important_date" record={date} what="ważną datę" doneTo="/wazne-daty" /></Section>
         </>
       )}

@@ -12,3 +12,4 @@ export const apiErrorSchema = z.strictObject({ error: z.enum([
 ]), message: z.string().max(200).optional() });
 
 export * from './tasks.js';
+export * from './calendar.js';
