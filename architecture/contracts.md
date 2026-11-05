@@ -138,6 +138,9 @@ Strict kontrakty online subskrypcji, konfiguracji i stanu znajdują się w
 `packages/contracts/src/push.ts`. Wszystkie operacje wymagają sesji i nagłówka konta;
 mutacje podlegają CSRF. Nie zmieniają koperty sync v2 ani Dexie v2. SQLite v5 dodaje
 sesyjne powiązanie subskrypcji i trwałą kolejkę; bez edycji migracji v1–v4.
+SQLite v6 dodaje serwerowe `actor_id` w journalu i zdarzeniach zadań oraz
+`previous_assignee` w zdarzeniach. Nie są częścią odpowiedzi sync/API/eksportu;
+payloady pozostają zgodne. Szczegóły filtrowania odbiorców i migracji: [push.md](push.md).
 
 Ustawienia konta rozszerzają `notifications` o opcjonalne `taskReminders` (true),
 `taskReminderTime` (09:00), `taskMinutesBefore` (0, zakres 0–10080) i `taskAssignments`

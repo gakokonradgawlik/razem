@@ -78,4 +78,7 @@ Dedup per urządzenie, lease, retry i anulowanie: [push.md](push.md).
 Domyślnie przypomina o godzinie terminu albo o 09:00 dla dnia; ustawienia konta
 pozwalają wyłączyć i zmienić godzinę/wyprzedzenie oraz wyłączyć przypisania.
 Prywatne przypomnienie trafia tylko do właściciela. Brak gwarancji alarmu offline.
+SQLite v6 dopisuje do zdarzeń autora z sesji i poprzednie przypisanie, atomowo z mutacją.
+Push o przypisaniu otrzymują tylko nowo dodane osoby poza autorem czynności;
+`owner_id` nadal oznacza właściciela rekordu. Zdarzenia historyczne bez autora są pomijane.
 Dowody RAZ-8: `quality/raz-8.md`; worker/push: [quality/raz-12.md](../quality/raz-12.md).

@@ -14,6 +14,12 @@ pozwala pokazywać tytuły własnych i wspólnych wpisów. Prywatny wpis zawsze 
 wyłącznie u właściciela. Zakupy wymagają dodatkowego przełącznika (domyślnie false).
 Powiadomienia o przypisaniu zadania można osobno wyłączyć. Zmiana produktu, także
 usunięcie, prowadzi do dostępnej, żywej listy; usunięta lista nie wysyła powiadomienia.
+Przypisania i zmiany zakupów powiadamiają wyłącznie drugą osobę: autor czynności
+nie dostaje push na żadne ze swoich urządzeń. Nowe wspólne zadanie `both`/`partner`
+utworzone przez A powiadamia B; `self` i zadanie prywatne nie generują powiadomienia
+o przypisaniu dla A. Zmiana przypisania powiadamia tylko nowo dodanych odbiorców,
+po wykluczeniu autora. Przypomnienia o terminach nadal trafiają do przypisanych osób,
+także jeśli same utworzyły zadanie.
 
 Zadania mają domyślnie przypomnienie w chwili terminu albo o 09:00 w zapisanej strefie
 zadania dla terminu date-only. Ustawienia konta pozwalają wyłączyć przypomnienia,
@@ -66,8 +72,15 @@ własny origin i znane trasy, także przy podmienionych danych kliknięcia.
 
 SQLite v5 unieważnia nieweryfikowalne stare subskrypcje i nieużywany szkielet kolejki
 v2, dodaje powiązanie sesji, preferencje i `worker_state`. Zachowuje domenę, sesje,
-journal, receipts oraz wcześniejsze preferencje. Migracje v1–v4 są zamrożone; migruje
+journal, receipts oraz wcześniejsze preferencje. Migracje v1–v5 są zamrożone; migruje
 wyłącznie serwer z backupem. Worker czeka na aktualny schemat, sam nie migruje.
+Migracja v6 dodaje `actor_id` do `task_events` i `sync_changes` oraz
+`previous_assignee` do `task_events`. `RecordRepository` zapisuje autora z zaufanego
+`AccountScope` i poprzednie przypisanie w tej samej transakcji co rekord/journal/receipt.
+`owner_id` pozostaje właścicielem rekordu, także gdy zmienia go partner. Pola są tylko
+serwerowe, bez zmiany payloadów API, sync czy eksportu. Starsze zdarzenia i systemowy
+purge mają autora NULL: nie zgadujemy go z właściciela i pomijamy takie powiadomienia
+assignment/shopping, również już oczekujące w kolejce. Terminy nadal obsługuje pełny skan.
 Dexie v2 i sync v2 pozostają bez zmian. Rozszerzone preferencje settings/eksportu
 wymagają `x-razem-notifications: 1`; starsza strict PWA otrzymuje dotychczasowe dwa pola.
 Nowy klient czyta także stary offline cache z domyślnymi wartościami rozszerzenia.
@@ -85,6 +98,9 @@ Przypisania pochodzą z `task_events`, zakupy z `sync_changes`. Checkpointy są 
 partia do 1000 zdarzeń i wstawienie dispatch są zatwierdzane w jednej transakcji
 IMMEDIATE. Błąd wstawienia cofa również checkpoint. Dwa zdarzenia create/assigned
 tego samego zadania i wersji dają jedną wysyłkę. Brak subskrypcji nie zatrzymuje checkpointu.
+Planner i dispatcher wykluczają autora zdarzenia oraz dotychczasowych odbiorców
+przypisania (porównanie `previous_assignee` z aktualnym przypisaniem przez wspólne
+`taskRecipients`). Cofnięcie/utrata uprawnień i zmiana wersji nadal anulują stary dispatch.
 
 `reminder_dispatches` ma unikalny hash klucza obejmującego subskrypcję, wpis, wersję,
 rodzaj, termin, źródło i konfigurację. Brak payloadów/tytułów w kolejce. Każde urządzenie

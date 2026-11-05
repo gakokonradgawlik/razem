@@ -19,7 +19,7 @@ bez usuwania wcześniejszych zaległości. Zobacz [architecture/tasks.md](archit
 Po aktualizacji z wersji sprzed RAZ-8 stara PWA pokaże potrzebę aktualizacji sync:
 zapisz formularze, zamknij wszystkie okna Razem i otwórz ponownie. Oczekujące zmiany
 pozostają. Sync używa v2, health v1; migracja SQLite v4 dodaje wyłącznie zdarzenia
-zadań. RAZ-12 rozszerza SQLite do v5 i dostarcza worker powiadomień.
+zadań. RAZ-12 rozszerza SQLite do v6 i dostarcza worker powiadomień.
 
 Kalendarz pokazuje wydarzenia i ważne daty w agendzie oraz miesiącu (tydzień od
 poniedziałku). Kliknij dzień miesiąca, aby wyświetlić jego wpisy. „Agenda od dnia”
@@ -229,7 +229,7 @@ Logout, zmiana konta i odwołanie sesji odpinają powiązanie; ponowne włączen
 
 Nie ma gwarancji alarmu offline ani cichej synchronizacji zamkniętej PWA. Fizyczne
 wysłanie na zamkniętą PWA iPhone po HTTPS pozostaje do testu w RAZ-16.
-Kontrakty, migracja SQLite v5, lease/retry, granica możliwego ponownego dostarczenia
+Kontrakty, migracje SQLite v5/v6, lease/retry, granica możliwego ponownego dostarczenia
 oraz konfiguracja: [architecture/push.md](architecture/push.md). Dowody:
 [quality/raz-12.md](quality/raz-12.md).
 
