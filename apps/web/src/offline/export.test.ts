@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { RecordRepository } from '@razem/db';
+import { RecordRepository, openDatabase } from '@razem/db';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildApp } from '../../../server/src/app.js';
+import { createBackup, restoreBackup } from '../../../server/src/backup/storage.js';
 import { accountExportSchema, SYNC_ACCOUNT_HEADER } from '@razem/contracts';
 import { A, B, seedDomain } from '../../../../tests/fixtures/installation.js';
 import { startServer, Phone, ACCOUNTS } from './test-harness.js';
@@ -80,4 +85,32 @@ it('odpowiedź eksportu starego konta nie pobiera pliku po przełączeniu konta'
   };
   expect(await stale.exportAccount!()).toEqual({ ok: false, reason: 'account_changed' });
   expect(await stale.exportPending!()).toEqual({ ok: false, reason: 'storage_unavailable' });
+});
+
+it('restore odwołuje starą sesję; ponowne logowanie i resync zachowują niewysłaną intencję telefonu', async () => {
+  const phone = new Phone(server), a = await signed(phone, 'a');
+  const created = await a.store!.create('note', { title: 'Przed backupem', body: 'baza' }, 'private');
+  if (!created.ok) throw new Error('create');
+  await a.syncNow();
+  const dir = mkdtempSync(join(tmpdir(), 'razem-restore-sync-'));
+  try {
+    const archive = createBackup(server.database.path, join(dir, 'backups'));
+    phone.setOffline(true); await a.store!.update('note', created.value, { body: 'zachowaj intencję offline' });
+    const before = await a.store!.db.queue.toArray();
+    const target = join(dir, 'isolated'); restoreBackup(archive, target);
+    const restored = openDatabase(join(target, 'razem.sqlite'));
+    const app = await buildApp({ database: restored, publicOrigin: 'https://razem.test', auth: { argon2: { memory: 1024, passes: 1, parallelism: 1 } } });
+    const original = server.app;
+    try {
+      server.app = app; // This synthetic phone now talks to the isolated recovered server.
+      phone.setOffline(false); await a.syncNow();
+      expect(a.getSnapshot().status.connection).toBe('auth_required');
+      expect(await a.store!.db.queue.toArray()).toEqual(before);
+      expect(await a.login(ACCOUNTS.a.login, ACCOUNTS.a.password)).toEqual({ ok: true });
+      await a.syncNow();
+      expect(await a.store!.pendingCount()).toBe(0);
+      expect(new RecordRepository(restored).get(A, 'note', created.value)?.data).toMatchObject({ body: 'zachowaj intencję offline' });
+      expect(new RecordRepository(restored).get(B, 'note', created.value)).toBeNull();
+    } finally { server.app = original; await app.close(); restored.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

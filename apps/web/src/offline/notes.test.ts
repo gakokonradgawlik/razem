@@ -104,12 +104,14 @@ it('notatki ACL: prywatny tytuł/tekst/ID nie przechodzi do API, pull, konfliktu
     protocolVersion: 2, deviceId: crypto.randomUUID(), mutations: [{ entityId: id, entityType: 'note', command: 'update', baseVersion: 1, clientMutationId: crypto.randomUUID(), patch: { visibility: 'shared' } }],
   } });
   expect(forbidden.json().results[0]).toMatchObject({ status: 'error', code: 'validation_error' });
-  for (const url of ['/api/export', `/api/notes/${id}`, `/api/notes?search=${encodeURIComponent(data.title)}`]) {
+  for (const url of [`/api/notes/${id}`, `/api/notes?search=${encodeURIComponent(data.title)}`]) {
     const result = await server.app.inject({ method: 'GET', url, headers });
     expect(result.statusCode).toBe(404); hidden(result.json());
   }
   for (const trash of [false, true]) {
     if (trash) { ok(await a.command((s) => s.remove('note', id))); await a.syncNow(); await b.syncNow(); }
+    const exported = await server.app.inject({ method: 'GET', url: '/api/export', headers });
+    expect(exported.statusCode).toBe(200); hidden(exported.json());
     let cursor: string | undefined;
     do {
       const response = await server.app.inject({ method: 'GET', url: `/api/sync/pull?limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, headers });
