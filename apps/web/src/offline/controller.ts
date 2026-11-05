@@ -21,6 +21,12 @@ export type Snapshot = {
   phase: Phase; account: Account | null; status: SyncStatus;
   unsent: number; attention: number; revision: number;
   storage: 'ok' | 'full' | 'unavailable';
+  /**
+   * Identity of the open account database (changes on every activation, logout and
+   * account switch). Screens, query results, forms and commands are bound to it: a value
+   * from another generation never reads or writes the current account's database.
+   */
+  generation: number;
 };
 
 export type AuthResult = { ok: true } | { ok: false; reason: 'invalid_credentials' | 'rate_limited' | 'weak_password' | 'authentication_required' | 'unavailable' | 'pending_changes' | 'storage_unavailable'; retryAfterSeconds?: number };
@@ -51,7 +57,8 @@ function authFailure(error: unknown): AuthResult {
 }
 
 export class AppController {
-  private snapshot: Snapshot = { phase: 'starting', account: null, status: INITIAL_STATUS, unsent: 0, attention: 0, revision: 0, storage: 'ok' };
+  private snapshot: Snapshot = { phase: 'starting', account: null, status: INITIAL_STATUS, unsent: 0, attention: 0, revision: 0, storage: 'ok', generation: 0 };
+  private generation = 0;
   private readonly listeners = new Set<() => void>();
   store: LocalStore | null = null;
   engine: SyncEngine | null = null;
@@ -91,12 +98,14 @@ export class AppController {
 
   private async activate(account: Account) {
     await this.deactivate();
+    const generation = this.generation;
     const store = new LocalStore({ userId: account.userId, householdId: account.householdId }, this.options.dbOptions);
     try { await store.open(); await store.deviceId(); } catch {
       store.close();
-      this.set({ phase: 'storage_unavailable', account, storage: 'unavailable' });
+      if (this.generation === generation) this.set({ phase: 'storage_unavailable', account, storage: 'unavailable', generation });
       return;
     }
+    if (this.generation !== generation) { store.close(); return; } // superseded by a newer activation/logout
     this.store = store;
     this.writeAccount(account);
     this.engine = new SyncEngine(store, this.api, { ...this.options.engine, onAccountMismatch: (me) => { void this.adopt(me); } });
@@ -108,7 +117,8 @@ export class AppController {
       error: () => { if (this.store === store) this.set({ storage: 'unavailable' }); },
     });
     this.unwatch = () => subscription.unsubscribe();
-    this.set({ phase: 'ready', account, storage: 'ok', ...(await this.readCounts(store)) });
+    this.set({ phase: 'ready', account, storage: 'ok', generation, ...(await this.readCounts(store)) });
+    if (this.store !== store) return;
     if (typeof navigator !== 'undefined') void navigator.storage?.persist?.().catch(() => undefined);
     if (this.options.autoSync) this.engine.start();
   }
@@ -116,13 +126,20 @@ export class AppController {
   private async readCounts(store: LocalStore) {
     const counts = await store.counts();
     const status = { ...INITIAL_STATUS, ...(await store.getMeta<SyncStatus>('status')) };
-    return { ...counts, status };
+    const revision = Number((await store.db.meta.get('revision'))?.value) || 0;
+    return { ...counts, status, revision };
   }
 
   private async deactivate() {
-    this.engine?.stop(); this.engine = null;
+    // From now on nothing bound to the previous generation may touch a database.
+    this.generation++;
+    const engine = this.engine, store = this.store;
+    this.engine = null; this.store = null;
     this.unwatch?.(); this.unwatch = null;
-    this.store?.close(); this.store = null;
+    // An interrupted cycle ends first, so its lease is released in a still open database
+    // (otherwise the account's queue would wait for the lease to expire after re-login).
+    await engine?.stopAndSettle();
+    store?.close();
   }
 
   /** The server session belongs to another account (e.g. signed in in another tab): follow it. */
@@ -173,7 +190,7 @@ export class AppController {
     await this.deactivate();
     if (store) { try { await store.destroy(); } catch { /* best effort; DB name is account-scoped */ } }
     this.writeAccount(null);
-    this.set({ phase: 'signed_out', account: null, status: INITIAL_STATUS, unsent: 0, attention: 0, storage: 'ok' });
+    this.set({ phase: 'signed_out', account: null, status: INITIAL_STATUS, unsent: 0, attention: 0, revision: 0, storage: 'ok', generation: this.generation });
     return { ok: true };
   }
 
@@ -186,9 +203,19 @@ export class AppController {
     try { const value = await this.readCounts(store); if (this.store === store) this.set(value); } catch { /* reported by commands */ }
   }
 
-  /** Runs a local command, maps storage failures to the visible state and nudges sync. */
-  async command<T>(run: (store: LocalStore) => Promise<StoreResult<T>>): Promise<StoreResult<T>> {
-    const store = this.store;
+  /** The open store, only when it still belongs to the given generation (account). */
+  storeFor(generation: number): LocalStore | null {
+    return this.generation === generation && this.snapshot.generation === generation ? this.store : null;
+  }
+
+  /**
+   * Runs a local command, maps storage failures to the visible state and nudges sync.
+   * With `generation` (the screens always pass the one they were rendered for) a command
+   * started for another account is refused instead of being written to the current one.
+   */
+  async command<T>(run: (store: LocalStore) => Promise<StoreResult<T>>, generation?: number): Promise<StoreResult<T>> {
+    if (generation !== undefined && this.storeFor(generation) === null && this.store) return { ok: false, reason: 'account_changed' };
+    const store = generation === undefined ? this.store : this.storeFor(generation);
     if (!store) return { ok: false, reason: 'storage_unavailable' };
     const result = await run(store);
     if (!result.ok && (result.reason === 'storage_full' || result.reason === 'storage_unavailable')) {

@@ -87,6 +87,8 @@ export class SyncEngine {
     this.request(true);
   }
   stop() { this.stopped = true; this.abort.abort(); this.detach?.(); this.detach = null; }
+  /** Stops and waits until a cycle in progress has ended (and released its lease) — before the database is closed. */
+  async stopAndSettle() { this.stop(); await this.running?.catch(() => undefined); }
   private clock() { return this.options.now ? this.options.now() : Date.now(); }
   private get account() { return this.store.scope.userId; }
 

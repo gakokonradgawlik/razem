@@ -4,7 +4,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 import type { EntityType } from '@razem/contracts';
 import type { AppController, Snapshot } from './controller.js';
 import { titleOf } from './store.js';
-import type { StoreResult } from './store.js';
+import type { LocalStore, StoreResult } from './store.js';
 import type { LocalRecord } from '../local-db.js';
 import type { ActionResult, AppServices, ConflictView, StoredRecord, SyncState } from '../services.js';
 
@@ -44,10 +44,16 @@ function download(name: string, content: string) {
 export function servicesFor(controller: AppController, snapshot: Snapshot): AppServices {
   const account = snapshot.phase === 'ready' || snapshot.phase === 'storage_unavailable' ? snapshot.account : null;
   const userId = account?.userId ?? '';
-  const store = () => controller.store;
+  // Every read and write below is bound to the account database these services were
+  // made for: after an account switch (e.g. adopted from another tab) a stale callback
+  // held by a screen reads nothing and writes nothing into the new account's database.
+  const generation = snapshot.generation;
+  const store = () => controller.storeFor(generation);
+  const command = <T,>(run: (s: LocalStore) => Promise<StoreResult<T>>) => controller.command(run, generation);
   const syncState = toSyncState(snapshot);
   return {
     session: account ? { login: account.login, displayName: account.displayName, mustChangePassword: account.mustChangePassword } : null,
+    accountKey: `${account?.userId ?? '-'}#${generation}`,
     pendingChanges: snapshot.unsent,
     ...(syncState ? { syncState } : {}),
     revision: snapshot.revision,
@@ -56,10 +62,10 @@ export function servicesFor(controller: AppController, snapshot: Snapshot): AppS
     changePassword: async (request) => controller.changePassword(request.currentPassword, request.newPassword),
     logout: (options) => controller.logout(options),
     syncNow: () => controller.syncNow(),
-    saveRecord: async ({ entityType, visibility, data }) => done(await controller.command((s) => s.create(entityType, data, visibility))),
-    updateRecord: async ({ entityType, id, patch }) => done(await controller.command((s) => s.update(entityType, id, patch))),
-    deleteRecord: async ({ entityType, id }) => done(await controller.command((s) => s.remove(entityType, id))),
-    restoreRecord: async (entityType, id) => done(await controller.command((s) => s.restore(entityType, id))),
+    saveRecord: async ({ entityType, visibility, data }) => done(await command((s) => s.create(entityType, data, visibility))),
+    updateRecord: async ({ entityType, id, patch }) => done(await command((s) => s.update(entityType, id, patch))),
+    deleteRecord: async ({ entityType, id }) => done(await command((s) => s.remove(entityType, id))),
+    restoreRecord: async (entityType, id) => done(await command((s) => s.restore(entityType, id))),
     listRecords: async ({ entityType, parentId }) => {
       const s = store();
       if (!s) return { status: 'unavailable' };
@@ -94,8 +100,8 @@ export function servicesFor(controller: AppController, snapshot: Snapshot): AppS
       };
       return { status: 'ok', value };
     },
-    resolveConflict: async (id, resolution) => done(await controller.command((s) => s.resolve(id, resolution))),
-    discardRejected: async (id) => done(await controller.command((s) => s.discardRejected(id))),
+    resolveConflict: async (id, resolution) => done(await command((s) => s.resolve(id, resolution))),
+    discardRejected: async (id) => done(await command((s) => s.discardRejected(id))),
     exportPending: async () => {
       const s = store();
       if (!s || !account) return { ok: false, reason: 'storage_unavailable' };

@@ -81,7 +81,7 @@ it('statusy synchronizacji mają brzmienie z design/interface.md', () => {
 });
 
 it('stan kontrolera → status: konflikt i brak miejsca mają pierwszeństwo, "Zsynchronizowano" tylko po udanym cyklu bez zaległości', () => {
-  const base = { phase: 'ready' as const, account: null, unsent: 0, attention: 0, revision: 1, storage: 'ok' as const,
+  const base = { phase: 'ready' as const, account: null, unsent: 0, attention: 0, revision: 1, storage: 'ok' as const, generation: 1,
     status: { connection: 'ok' as const, lastSyncAt: '2026-11-04T13:05:00.000Z', lastAckAt: null, checkedAt: null } };
   expect(toSyncState(base)).toEqual({ kind: 'synced', at: new Date('2026-11-04T13:05:00.000Z') });
   expect(toSyncState({ ...base, unsent: 2 })).toEqual({ kind: 'pending', count: 2 });

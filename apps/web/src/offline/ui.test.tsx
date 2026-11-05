@@ -6,8 +6,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { App } from '../App.js';
 import { navigate } from '../router.js';
+import { IDBKeyRange } from 'fake-indexeddb';
 import { useControllerServices } from './live.js';
-import { ACCOUNTS, Phone, startServer } from './test-harness.js';
+import { LocalDatabase } from '../local-db.js';
+import type { AppServices } from '../services.js';
+import { ACCOUNTS, HOUSEHOLD, Phone, startServer } from './test-harness.js';
 import type { Server } from './test-harness.js';
 import type { AppController } from './controller.js';
 
@@ -186,4 +189,96 @@ it('wylogowanie z niewysłanymi zmianami ostrzega i daje eksport; inne konto nie
   go('/notatki');
   await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Notatki' })).toBeTruthy());
   expect(document.body.textContent).not.toContain('Prywatny numer PIN');
+});
+
+// Account switch adopted from another tab while a screen of A is open: React state of A
+// (form values, loaded records, callbacks) must neither stay on screen nor reach B.
+function RecordingRoot({ controller, seen }: { controller: AppController; seen: AppServices[] }) {
+  const services = useControllerServices(controller);
+  seen.push(services);
+  return <App services={services} />;
+}
+async function adoptB(phone: Phone, tab: AppController) {
+  await phone.network.signInElsewhere(ACCOUNTS.b);
+  await act(async () => { await tab.syncNow(); });
+  await waitFor(() => expect(tab.getSnapshot().account?.userId).toBe(ACCOUNTS.b.id));
+  await waitFor(() => expect(tab.getSnapshot().phase).toBe('ready'));
+}
+
+it('zmiana konta w innej karcie przy otwartym formularzu A: treść A znika, nie trafia do B, pending A czeka na A', async () => {
+  const phone = new Phone(server);
+  const tab = await signedIn(phone, 'a');
+  // A has an unsent private note (server unreachable for now).
+  phone.network.outage = 503;
+  await tab.command((s) => s.create('note', { title: 'Pending A', body: 'tylko dla A' }, 'private'));
+  phone.network.outage = null;
+
+  const seen: AppServices[] = [];
+  render(<RecordingRoot controller={tab} seen={seen} />);
+  go('/notatki/nowa');
+  fireEvent.change(await screen.findByLabelText('Tytuł'), { target: { value: 'Sekret A w formularzu' } });
+  fireEvent.change(screen.getByLabelText('Treść'), { target: { value: 'PIN 4321' } });
+  const servicesOfA = seen[seen.length - 1]!;
+
+  await adoptB(phone, tab);
+
+  // The screen was remounted for B: nothing of A on it, the form is empty, the user is told why.
+  await waitFor(() => expect((screen.getByLabelText('Tytuł') as HTMLInputElement).value).toBe(''));
+  expect(document.body.textContent).not.toContain('Sekret A w formularzu');
+  expect(document.body.textContent).not.toContain('PIN 4321');
+  expect(screen.getByRole('alert').textContent).toContain('Otwarto konto: Konto B');
+  // Saving the (now empty) form writes nothing.
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  expect(await screen.findByText(/Popraw zaznaczone pole/)).toBeTruthy();
+
+  // A stale callback of A (e.g. a save already clicked) is refused, it does not write into B.
+  expect(await servicesOfA.saveRecord({ entityType: 'note', visibility: 'private', data: { title: 'Sekret A w formularzu', body: 'PIN 4321' } }))
+    .toEqual({ ok: false, reason: 'account_changed' });
+  expect(await servicesOfA.listRecords({ entityType: 'note' })).toEqual({ status: 'unavailable' });
+
+  const storeB = tab.store!;
+  expect(storeB.scope.userId).toBe(ACCOUNTS.b.id);
+  expect(await storeB.db.records.count()).toBe(0);
+  expect(await storeB.db.queue.count()).toBe(0);
+  await act(async () => { await tab.syncNow(); });
+  expect(server.count('notes')).toBe(0);
+  expect(server.count('notes', `owner_id = '${ACCOUNTS.b.id}'`)).toBe(0);
+
+  // A's pending change waited in A's database and goes out as A after A signs in again.
+  await act(async () => { expect(await tab.login(ACCOUNTS.a.login, ACCOUNTS.a.password)).toEqual({ ok: true }); await tab.syncNow(); });
+  expect(server.database.sqlite.prepare('SELECT title, owner_id AS owner, visibility FROM notes').all())
+    .toEqual([{ title: 'Pending A', owner: ACCOUNTS.a.id, visibility: 'private' }]);
+});
+
+it.each([
+  { view: 'szczegóły', path: (id: string) => `/notatki/${id}` },
+  { view: 'lista', path: () => '/notatki' },
+])('zmiana konta przy otwartej prywatnej notatce A ($view), równe rewizje obu baz: B nie widzi treści A', async ({ path }) => {
+  const phone = new Phone(server);
+  // B used this device before, so its database exists; then A signs in on the same tab.
+  const tab = await signedIn(phone, 'b');
+  expect(await tab.login(ACCOUNTS.a.login, ACCOUNTS.a.password)).toEqual({ ok: true });
+  await tab.syncNow();
+  const created = await tab.command((s) => s.create('note', { title: 'Prywatna notatka A', body: 'numer konta A' }, 'private'));
+  const id = created.ok ? created.value : '';
+  await tab.syncNow();
+  // Make the revisions of both databases equal, so a view keyed only by revision would not reload.
+  const revisionA = Number((await tab.store!.db.meta.get('revision'))?.value);
+  const dbB = new LocalDatabase({ userId: ACCOUNTS.b.id, householdId: HOUSEHOLD }, { indexedDB: phone.indexedDB, IDBKeyRange });
+  await dbB.meta.put({ key: 'revision', value: revisionA });
+  dbB.close();
+
+  await tab.refresh();
+  expect(tab.getSnapshot().revision).toBe(revisionA);
+  render(<Root controller={tab} />);
+  go(path(id));
+  expect((await screen.findAllByText('Prywatna notatka A')).length).toBeGreaterThan(0);
+
+  await adoptB(phone, tab);
+  await waitFor(() => expect(tab.getSnapshot().revision).toBe(revisionA));
+  await waitFor(() => expect(document.body.textContent).not.toContain('Prywatna notatka A'));
+  expect(document.body.textContent).not.toContain('numer konta A');
+  // A's data stays in A's database only; nothing of it was written for B.
+  expect(await tab.store!.db.records.count()).toBe(0);
+  expect(server.count('notes', `owner_id = '${ACCOUNTS.b.id}'`)).toBe(0);
 });

@@ -11,7 +11,8 @@ import type { AccountScope, EntityType, Mutation, PullResponse, PushResponse, Sy
 import { LocalDatabase, parentOf } from '../local-db.js';
 import type { Command, ConflictEntry, LocalRecord, QueueEntry, ServerState, Visibility } from '../local-db.js';
 
-export type StoreFailure = 'storage_full' | 'storage_unavailable' | 'not_found' | 'invalid' | 'conflict_open';
+/** account_changed: the command was started for an account that is no longer open here (controller). */
+export type StoreFailure = 'storage_full' | 'storage_unavailable' | 'not_found' | 'invalid' | 'conflict_open' | 'account_changed';
 export type StoreResult<T = undefined> = { ok: true; value: T } | { ok: false; reason: StoreFailure };
 export type MutationResult = PushResponse['results'][number];
 export type OkPull = Extract<PullResponse, { status: 'ok' }>;

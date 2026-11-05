@@ -11,7 +11,7 @@ import type { z } from 'zod';
 export type LoginRequest = z.input<typeof loginRequestSchema>;
 export type PasswordChangeRequest = z.input<typeof passwordChangeRequestSchema>;
 export type AuthFailure = 'invalid_credentials' | 'rate_limited' | 'weak_password' | 'authentication_required' | 'unavailable' | 'not_implemented';
-export type StorageFailure = 'storage_unavailable' | 'storage_full' | 'not_found' | 'invalid' | 'conflict_open' | 'pending_changes';
+export type StorageFailure = 'storage_unavailable' | 'storage_full' | 'not_found' | 'invalid' | 'conflict_open' | 'pending_changes' | 'account_changed';
 export type ActionResult = { ok: true } | { ok: false; reason: AuthFailure | StorageFailure; retryAfterSeconds?: number };
 
 export type Session = { login: string; displayName: string; mustChangePassword: boolean };
@@ -46,6 +46,13 @@ export type TrashItem = { id: string; entityType: EntityType; title: string; del
 
 export interface AppServices {
   session: Session | null;
+  /**
+   * Opaque identity of the open account database (new on every sign-in, account switch
+   * and logout). The app remounts every screen when it changes, so form values and loaded
+   * records of one account never stay on screen for another; every call of these
+   * services is bound to it and refuses (account_changed) once it is stale.
+   */
+  accountKey?: string;
   login(request: LoginRequest): Promise<ActionResult>;
   changePassword(request: PasswordChangeRequest): Promise<ActionResult>;
   /** Writes the record and its outbox entry locally (RAZ-5). Must not resolve ok unless persisted. */
@@ -108,6 +115,7 @@ export function failureMessage(result: Exclude<ActionResult, { ok: true }>): str
     case 'invalid': return 'Nie zapisano. Sprawdź wpisane dane.';
     case 'conflict_open': return 'Ten wpis zmieniono też na innym urządzeniu. Najpierw wybierz wersję w „Zmiany do sprawdzenia”.';
     case 'pending_changes': return 'Na tym urządzeniu są niewysłane zmiany.';
+    case 'account_changed': return 'Nie zapisano: w tej aplikacji zalogowano inne konto.';
   }
 }
 

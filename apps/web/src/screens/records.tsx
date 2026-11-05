@@ -26,13 +26,14 @@ export function useLoad<T>(load: () => Promise<LoadResult<T>>, key: string): [Lo
   const [state, setState] = useState<LoadState<T>>({ status: 'loading' });
   const [generation, setGeneration] = useState(0);
   // Local writes, pulled changes and other tabs bump the revision: the view re-reads the local store.
-  const { revision } = useServices();
+  // The account database is part of the query (App also remounts screens on an account switch).
+  const { revision, accountKey } = useServices();
   useEffect(() => {
     let active = true;
     load().then((result) => { if (active) setState(result); }, () => { if (active) setState({ status: 'unavailable' }); });
     return () => { active = false; };
     // `key` identifies the query; `load` is recreated on every render.
-  }, [key, generation, revision]);
+  }, [key, generation, revision, accountKey]);
   return [state, useCallback(() => setGeneration((value) => value + 1), [])];
 }
 
