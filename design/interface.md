@@ -60,3 +60,12 @@ wliczony w formularzu. Ważna data nie wymaga roku; gdy rok istnieje, pokazuje l
 Opcjonalne przypomnienie zapisuje się offline, z jawną informacją o braku wysyłki
 powiadomień w tej wersji. Szczegóły: [calendar.md](../architecture/calendar.md),
 dowody: [raz-9.md](../quality/raz-9.md).
+
+## Notatki po RAZ-10
+
+„Udostępnij wspólną kopię” w prywatnej notatce pokazuje pełny tekst i zakres
+odbiorców przed potwierdzeniem. Powstaje niezależna wspólna notatka, oryginał
+pozostaje „Tylko ja”. Edycja zachowuje tekst przy błędach, a nowsza wersja pobrana
+podczas otwartego formularza wymaga porównania i świadomego przyjęcia podstawy
+po ręcznym połączeniu. Konflikty zapisanych zmian obsługuje ekran „Zmiany do
+sprawdzenia”. Szczegóły: [architecture/notes.md](../architecture/notes.md).

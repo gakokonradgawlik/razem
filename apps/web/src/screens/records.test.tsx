@@ -387,3 +387,56 @@ it('edycja kalendarza wysyła tylko zmienione pola i zachowuje równoczesne usta
   fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
   await waitFor(() => expect(services.saveCalendar).toHaveBeenCalledWith({ entityType: 'calendar_event', id: EVENT, data: { title: 'Nowy tytuł wyjazdu' }, visibility: 'shared' }));
 });
+
+it.each(['storage_full', 'storage_unavailable', 'unavailable', 'conflict_open'] as const)('notatki: %s zachowuje tytuł i tekst bez interpretowania HTML', async (reason) => {
+  const services = { ...memoryServices(), updateRecord: vi.fn<AppServices['updateRecord']>(async () => ({ ok: false, reason })) };
+  render(<App services={services} />); go(`/notatki/${NOTE}/edycja`);
+  const body = 'Zażółć 🐢 <img src=x onerror=alert(1)>\n<b>zwykły tekst</b>';
+  fireEvent.change(await screen.findByLabelText('Tytuł'), { target: { value: 'Nowy tytuł ⛵' } });
+  fireEvent.change(screen.getByLabelText('Treść'), { target: { value: body } });
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('Wpisana treść została zachowana');
+  expect((screen.getByLabelText('Treść') as HTMLTextAreaElement).value).toBe(body);
+  expect((screen.getByLabelText('Tytuł') as HTMLInputElement).value).toBe('Nowy tytuł ⛵');
+  expect(document.querySelector('img')).toBeNull();
+});
+
+it('notatki: domyślnie Tylko ja, Wspólne jest świadomym wyborem przed zapisem', async () => {
+  const services = memoryServices(); render(<App services={services} />); go('/notatki/nowa');
+  expect((screen.getByRole('radio', { name: /Tylko ja/ }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.change(screen.getByLabelText('Tytuł'), { target: { value: 'Żółw 🐢' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  await waitFor(() => expect(services.saveRecord).toHaveBeenCalledWith({ entityType: 'note', visibility: 'private', data: { title: 'Żółw 🐢', body: '' } }));
+  await waitFor(() => expect(window.location.pathname).toBe('/notatki'));
+  go('/notatki/nowa'); fireEvent.change(screen.getByLabelText('Tytuł'), { target: { value: 'Łódź ⛵' } });
+  fireEvent.click(screen.getByRole('radio', { name: /Wspólne/ })); fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  await waitFor(() => expect(services.saveRecord).toHaveBeenLastCalledWith({ entityType: 'note', visibility: 'shared', data: { title: 'Łódź ⛵', body: '' } }));
+});
+
+it('notatki: kopiowanie wymaga potwierdzenia zakresu, anulowanie nic nie zapisuje, błąd i retry zachowują ID i zatwierdzony tekst', async () => {
+  const shareNote = vi.fn<NonNullable<AppServices['shareNote']>>().mockResolvedValueOnce({ ok: false, reason: 'storage_full' }).mockResolvedValue({ ok: true });
+  render(<App services={{ ...memoryServices(), shareNote }} />); go(`/notatki/${NOTE}`);
+  fireEvent.click(await screen.findByRole('button', { name: 'Udostępnij wspólną kopię' }));
+  const confirmation = screen.getByRole('group', { name: 'Potwierdź wspólną kopię' });
+  expect(confirmation.textContent).toContain('Druga osoba w Waszym domu zobaczy tytuł i całą treść');
+  expect(confirmation.textContent).toContain('Oryginał pozostanie „Tylko ja”');
+  expect(shareNote).not.toHaveBeenCalled(); fireEvent.click(within(confirmation).getByRole('button', { name: 'Anuluj' }));
+  expect(shareNote).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Udostępnij wspólną kopię' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Utwórz wspólną kopię' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('brak miejsca');
+  const input = shareNote.mock.calls[0]![0];
+  expect(input.copyId).not.toBe(NOTE); expect(input).toMatchObject({ sourceId: NOTE, data: fixtures.find((r) => r.id === NOTE)!.data });
+  fireEvent.click(screen.getByRole('button', { name: 'Utwórz wspólną kopię' }));
+  await waitFor(() => expect(shareNote).toHaveBeenLastCalledWith(input));
+  await waitFor(() => expect(window.location.pathname).toBe(`/notatki/${input.copyId}`));
+});
+
+it('notatki: błąd odczytu/usunięcie podczas edycji nie odmontowuje formularza', async () => {
+  const services = memoryServices(); const app = render(<App services={{ ...services, revision: 1 }} />); go(`/notatki/${NOTE}/edycja`);
+  fireEvent.change(await screen.findByLabelText('Treść'), { target: { value: 'Niezapisany tekst 🐢' } });
+  services.getRecord.mockResolvedValue({ status: 'not_found' });
+  app.rerender(<App services={{ ...services, revision: 2 }} />);
+  expect(await screen.findByText(/Notatka jest teraz niedostępna/)).toBeTruthy();
+  expect((screen.getByLabelText('Treść') as HTMLTextAreaElement).value).toBe('Niezapisany tekst 🐢');
+});

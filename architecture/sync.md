@@ -219,3 +219,15 @@ Parent reminder ma sprawdzany targetType i ACL; lokalne odczyty ukrywają przypo
 usuniętego/niedostępnego rodzica. Zależności push, receipt, konflikty i kolejność ACK
 pozostają zgodne z mechanizmem bazowym. Reguły czasu oraz granice przyszłego workera:
 [calendar.md](calendar.md).
+
+## Notatki — RAZ-10
+
+Udostępnienie prywatnej notatki jest potwierdzoną, niezależną wspólną kopią z nowym
+UUID. Lokalny sourceId nie trafia do outbox/payloadu kopii. Jej zwykły create i rekord
+powstają atomowo, retry zachowuje copyId, clientMutationId i deviceId. Prywatny
+oryginał nie zmienia zakresu. Edytor porównuje lokalne expectedData przed update,
+żeby pull odebrany podczas pisania nie stał się po cichu podstawą nowego zapisu;
+różnica zachowuje szkic i wymaga porównania/połączenia. To lokalny warunek,
+bez zmiany protokołu v2, SQLite v4 ani Dexie v2. Konflikty zapisanych zmian nadal
+korzystają z istniejącego mechanizmu wersji i ręcznego scalania.
+Szczegóły: [notes.md](notes.md), dowody: [../quality/raz-10.md](../quality/raz-10.md).

@@ -64,11 +64,12 @@ export function servicesFor(controller: AppController, snapshot: Snapshot): AppS
     logout: (options) => controller.logout(options),
     syncNow: () => controller.syncNow(),
     saveRecord: async ({ entityType, visibility, data }) => done(await command((s) => s.create(entityType, data, visibility))),
-    updateRecord: async ({ entityType, id, patch }) => done(await command((s) => s.update(entityType, id, patch))),
+    updateRecord: async ({ entityType, id, patch, expectedData }) => done(await command((s) => s.update(entityType, id, patch, expectedData))),
     deleteRecord: async ({ entityType, id }) => done(await command((s) => s.remove(entityType, id))),
     saveCalendar: async (input) => done(await command((s) => s.saveCalendar(input))),
     setTaskOccurrence: async (taskId, key, completed) => done(await command((s) => s.setTaskOccurrence(taskId, key, completed))),
     restoreRecord: async (entityType, id) => done(await command((s) => s.restore(entityType, id))),
+    shareNote: async (input) => done(await command((s) => s.shareNote(input))),
     listRecords: async ({ entityType, parentId }) => {
       const s = store();
       if (!s) return { status: 'unavailable' };
