@@ -116,3 +116,15 @@ it('logout czyta trwałe pending i zachowuje zmiany zapisane podczas żądania; 
   expect(await a.logout({ discardPending: true })).toEqual({ ok: false, reason: 'account_changed' });
   expect((await a.store!.list('note'))[0]?.data.title).toBe('Zachowaj B'); expect(await a.store!.pendingCount()).toBe(1);
 });
+
+it('automatyczny cykl odświeża snapshot ustawień bez ręcznego refresh ani nowej komendy', async () => {
+  const a = await signed(new Phone(server), 'a'), b = await signed(new Phone(server), 'b');
+  expect(await b.updateSettings({ timezone: 'Pacific/Kiritimati', displayName: 'Nowa nazwa B' }, b.getSnapshot().generation)).toEqual({ ok: true });
+  expect(a.getSnapshot().settings?.household.timezone).toBe('Europe/Warsaw');
+  expect(await a.engine!.sync()).toBe('done'); // focus/online/15 s, not controller.syncNow()
+  expect((await a.store!.getMeta<{ household: { timezone: string } }>('settings'))?.household.timezone).toBe('Pacific/Kiritimati');
+  await vi.waitFor(() => {
+    expect(a.getSnapshot().settings?.household.timezone).toBe('Pacific/Kiritimati');
+    expect(a.getSnapshot().settings?.members).toContainEqual({ id: ACCOUNTS.b.id, displayName: 'Nowa nazwa B' });
+  }, { timeout: 5000 });
+});

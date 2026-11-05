@@ -31,6 +31,8 @@ export type EngineOptions = {
   /** null disables Web Locks (tests of the IndexedDB lease fallback). */
   locks?: LockManager | null;
   onAccountMismatch?: (me: MeResponse) => void;
+  /** Re-read the durable account metadata after a foreground cycle updated it. */
+  onSettingsCached?: () => Promise<void>;
   pullLimit?: number;
   pushBytes?: number;
   /** Clock of the IndexedDB lease (tests move it to simulate long requests and frozen tabs). */
@@ -180,6 +182,7 @@ export class SyncEngine {
     await this.guard();
     if (settings.household.id !== this.store.scope.householdId) throw new ApiError('account_mismatch');
     await this.store.setMeta('settings', settings);
+    await this.options.onSettingsCached?.();
     const deviceId = await this.store.deviceId();
     let pushedAny = await this.pushAll(deviceId);
     await this.pullAll();

@@ -76,7 +76,7 @@ test('Dzisiaj + ustawienia: menu, prywatność, zimny start offline, motyw/stref
     await a.goto(origin + '/');
     for (const title of [`Paczka ${tag}`, `Sekret ${tag}`, `Wizyta ${tag}`, `Rocznica ${tag}`, `Zakupy ${tag}`]) await expect(a.getByText(title, { exact: true })).toBeVisible();
     await expect(a.getByText('Do kupienia: 1', { exact: true })).toBeVisible();
-    await a.getByRole('checkbox', { name: `Ukończ: Paczka ${tag}`, exact: true }).check();
+    await a.getByRole('checkbox', { name: `Ukończ: Paczka ${tag}`, exact: true }).click();
     await expect(a.getByRole('checkbox', { name: `Ukończ: Paczka ${tag}`, exact: true })).toHaveCount(0);
     await a.getByRole('button', { name: 'Cofnij', exact: true }).click();
     await expect(a.getByRole('checkbox', { name: `Ukończ: Paczka ${tag}`, exact: true })).toBeVisible();
@@ -98,6 +98,7 @@ test('Dzisiaj + ustawienia: menu, prywatność, zimny start offline, motyw/stref
         for (const path of ['/', '/zakupy', '/zadania', '/kalendarz', '/notatki', '/wazne-daty', '/wiecej', '/kosz', '/ustawienia', '/ustawienia/profil', '/ustawienia/powiadomienia', '/ustawienia/instalacja', '/zmiany']) {
           await a.goto(origin + path); await expect(a.getByRole('heading', { level: 1 })).toBeVisible();
           expect(await layout(a), `${theme} ${width} ${path}`).toEqual([]);
+          if (path === '/zadania') expect(await a.locator('.segmented__option span').evaluateAll((nodes) => nodes.every((node) => node.getBoundingClientRect().height <= 44.5))).toBe(true);
           if (shots && width === 390) await a.screenshot({ path: join(shots, `${info.project.name}-${theme}-${path.replaceAll('/', '_') || '_'}.png`), fullPage: true });
         }
       }
@@ -105,8 +106,12 @@ test('Dzisiaj + ustawienia: menu, prywatność, zimny start offline, motyw/stref
     await context.setOffline(false); await sync(a, origin); await sync(b, origin); await b.goto(origin + '/');
     await expect(b.getByText(`Paczka ${tag}`, { exact: true })).toBeVisible(); await expect(b.getByText(`Sekret ${tag}`, { exact: true })).toHaveCount(0);
     await b.goto(origin + '/ustawienia/powiadomienia'); await expect(b.getByRole('switch', { name: /^Tytuły na ekranie blokady/ })).not.toBeChecked();
+    await b.goto(origin + '/ustawienia/profil'); await b.getByLabel('Twoja nazwa').fill(`Tomek ${tag}`); await save(b, '/ustawienia');
+    await a.goto(origin + '/ustawienia'); // automatic startup cycle, without Synchronizuj teraz
+    await expect(a.getByRole('link', { name: /Profil i domownicy/ })).toContainText(`Tomek ${tag}`);
     await a.goto(origin + '/notatki'); await a.getByRole('link', { name: new RegExp(`Prywatna notatka ${tag}`) }).click();
     await a.getByRole('button', { name: 'Usuń notatkę', exact: true }).click(); await a.getByRole('button', { name: 'Usuń', exact: true }).click();
+    await expect(a).toHaveURL(origin + '/notatki');
     await a.goto(origin + '/kosz'); const row = a.getByRole('listitem').filter({ hasText: `Prywatna notatka ${tag}` });
     await expect(row).toContainText('Usunięto:'); await row.getByRole('button', { name: 'Przywróć', exact: true }).click(); await expect(row).toHaveCount(0);
   } finally { await context.close(); await other.close(); await rm(profile, { recursive: true, force: true }); }

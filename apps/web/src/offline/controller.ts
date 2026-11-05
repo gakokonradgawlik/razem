@@ -111,11 +111,15 @@ export class AppController {
     if (this.generation !== generation) { store.close(); return; } // superseded by a newer activation/logout
     this.store = store;
     this.writeAccount(account);
-    this.engine = new SyncEngine(store, this.api, { ...this.options.engine, onAccountMismatch: (me) => { void this.adopt(me); } });
+    this.engine = new SyncEngine(store, this.api, {
+      ...this.options.engine,
+      onAccountMismatch: (me) => { void this.adopt(me); },
+      onSettingsCached: async () => { if (this.store === store) await this.refresh(); },
+    });
     const subscription = liveQuery(async () => {
       return this.readCounts(store);
     }).subscribe({
-      next: (value) => { if (this.store === store) this.set({ revision: value.revision, status: value.status, unsent: value.unsent, attention: value.attention }); },
+      next: (value) => { if (this.store === store) this.set(value); },
       error: () => { if (this.store === store) this.set({ storage: 'unavailable' }); },
     });
     this.unwatch = () => subscription.unsubscribe();
@@ -126,10 +130,12 @@ export class AppController {
   }
 
   private async readCounts(store: LocalStore) {
-    const counts = await store.counts();
-    const status = { ...INITIAL_STATUS, ...(await store.getMeta<SyncStatus>('status')) };
-    const revision = Number((await store.db.meta.get('revision'))?.value) || 0;
-    const parsed = settingsSchema.safeParse(await store.getMeta('settings'));
+    const [counts, storedStatus, storedRevision, storedSettings] = await Promise.all([
+      store.counts(), store.getMeta<SyncStatus>('status'), store.getMeta('revision'), store.getMeta('settings'),
+    ]);
+    const status = { ...INITIAL_STATUS, ...storedStatus };
+    const revision = Number(storedRevision) || 0;
+    const parsed = settingsSchema.safeParse(storedSettings);
     const settings = parsed.success && parsed.data.userId === store.scope.userId && parsed.data.household.id === store.scope.householdId ? parsed.data : undefined;
     return { ...counts, status, revision, settings };
   }
@@ -192,6 +198,7 @@ export class AppController {
     if ((await store.counts()).unsent > 0 && !options.discardPending) return { ok: false, reason: 'pending_changes' };
     if (this.storeFor(generation) !== store) return { ok: false, reason: 'account_changed' };
     try { await this.api.logout(store.scope.userId); } catch (error) {
+      if (error instanceof ApiError && error.kind === 'account_mismatch') return { ok: false, reason: 'account_changed' };
       if (!(error instanceof ApiError && error.kind === 'authentication_required')) return { ok: false, reason: 'unavailable' };
     }
     if (this.storeFor(generation) !== store) return { ok: false, reason: 'account_changed' };

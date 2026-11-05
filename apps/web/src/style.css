@@ -172,7 +172,7 @@ button.row:disabled, .row[aria-disabled] { opacity: 0.7; }
 
 /* ---------- Segmented & privacy (native radios, visible focus) ---------- */
 .segmented { display: flex; gap: 2px; padding: 2px; margin: 0; border: 0; border-radius: 10px; background: var(--fill); min-width: 0; }
-.segmented__option { flex: 1 1 0; min-width: 0; position: relative; }
+.segmented__option { flex: 1 1 auto; min-width: 0; position: relative; }
 .segmented__option input, .privacy__option input { position: absolute; opacity: 0; inset: 0; margin: 0; width: 100%; height: 100%; cursor: pointer; }
 .segmented__option span { display: grid; place-items: center; min-height: 44px; padding: 4px 6px; border-radius: 8px; font-size: 0.9375rem; font-weight: 500; text-align: center; overflow-wrap: anywhere; }
 .segmented__option input:checked + span { background: var(--surface-raised); font-weight: 700; box-shadow: 0 1px 3px rgb(0 0 0 / 0.15); }
@@ -210,6 +210,7 @@ input[type="search"].input { -webkit-appearance: none; appearance: none; }
 .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); column-gap: 12px; }
 .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding-top: 8px; cursor: pointer; font-weight: 600; }
 .toggle__text { display: flex; flex-direction: column; }
+.toggle__text .field__hint { font-weight: 400; }
 .toggle input { appearance: none; -webkit-appearance: none; flex: none; width: 51px; height: 31px; margin: 0; border-radius: 999px; background: var(--fill); border: 1px solid var(--control-border); position: relative; cursor: pointer; }
 .toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 25px; height: 25px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); }
 .toggle input:checked { background: var(--success); border-color: var(--success); }
