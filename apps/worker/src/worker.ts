@@ -8,7 +8,8 @@ import type { Database, PushTransport, Subscription } from '@razem/db';
 type Kind = 'reminder' | 'assignment' | 'shopping';
 type Spec = { type: EntityType; target: SyncRecord; kind: Kind; at: string; sequence: number | null; revision: unknown };
 type Job = { id: string; subscription_id: string; user_id: string; target_type: EntityType; target_id: string; kind: Kind; event_sequence: number | null; deduplication_key: string; scheduled_at: string; attempts: number; lease_token: string };
-type Event = { sequence: number; task_id?: string; entity_id: string; entity_type?: EntityType; kind?: string; version: number; changed_at: string };
+type Event = { sequence: number; task_id?: string; entity_id: string; entity_type?: EntityType; kind?: string; version: number; changed_at: string;
+  actor_id: string | null; previous_assignee?: 'self' | 'partner' | 'both' | null };
 const DAY = 86_400_000;
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const iso = (value: number | string) => new Date(value).toISOString();
@@ -87,6 +88,8 @@ export class ReminderWorker {
     return result;
   }
   private eventSpec(scope: AccountScope, event: Event, kind: Kind, now: string): Spec | null {
+    // Unknown legacy/system actors cannot safely produce a partner notification.
+    if (!event.actor_id || event.actor_id === scope.userId) return null;
     if (Date.parse(event.changed_at) < Date.parse(now) - DAY) return null;
     const type = kind === 'assignment' ? 'task' : event.entity_type!;
     let target = this.records.get(scope, type, event.task_id ?? event.entity_id);
@@ -95,6 +98,7 @@ export class ReminderWorker {
     if (target.entityType === 'task') {
       if (target.deletedAt) return null;
       if (settings.notifications.taskAssignments === false || target.data.completedAt || !taskRecipients(target, settings.members.map((m) => m.id)).includes(scope.userId)) return null;
+      if (event.previous_assignee && taskRecipients({ ...target, data: { assignee: event.previous_assignee } }, settings.members.map((m) => m.id)).includes(scope.userId)) return null;
     } else {
       if (!settings.notifications.shoppingNotifications) return null;
       if (target.entityType === 'shopping_item') {

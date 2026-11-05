@@ -130,6 +130,7 @@ it('zdarzenia przypisań/terminów/ukończeń są atomowe i bez treści; odrzuco
   expect(repo.update(A, { entityType: 'task', id, baseVersion: created.version, patch: { assignee: 'partner' } })).toEqual(INVALID);
   const events = () => database.sqlite.prepare('SELECT * FROM task_events ORDER BY sequence').all();
   expect(events()).toHaveLength(2);
+  expect(events()).toEqual([expect.objectContaining({ actor_id: A.userId, previous_assignee: null }), expect.objectContaining({ actor_id: A.userId, previous_assignee: null })]);
   expect(JSON.stringify(events())).not.toContain('Tytuł prywatny');
   expect(JSON.stringify(events())).not.toContain('Opis prywatny');
   ack(repo.update(A, { entityType: 'task', id, baseVersion: 1, patch: { completedAt: T } }));
@@ -143,4 +144,18 @@ it('zdarzenia przypisań/terminów/ukończeń są atomowe i bez treści; odrzuco
   expect(repo.get(A, 'task', id)).toMatchObject({ version: 2, data: { completedAt: T } });
   expect(repo.maxSequence()).toBe(before);
   expect(events()).toHaveLength(3);
+});
+
+it('autor zmiany pochodzi z konta piszącego, niezależnie od owner; poprzednie przypisanie i journal są atomowe', () => {
+  const id = uuid();
+  ack(repo.create(A, { entityType: 'task', id, visibility: 'shared', data: { title: 'Zadanie', description: '', assignee: 'self', dueDate: null, dueAt: null, timezone: 'Europe/Warsaw', completedAt: null, recurrence: null } }));
+  ack(repo.update(B, { entityType: 'task', id, baseVersion: 1, patch: { assignee: 'both' } }));
+  expect(database.sqlite.prepare('SELECT actor_id,owner_id,previous_assignee FROM task_events WHERE version=2').get())
+    .toEqual({ actor_id: B.userId, owner_id: A.userId, previous_assignee: 'self' });
+  expect(repo.journalSince(B, 0).map((row) => [row.ownerId, row.actorId])).toEqual([[A.userId, A.userId], [A.userId, B.userId]]);
+  database.sqlite.exec("CREATE TRIGGER fail_actor_journal BEFORE INSERT ON sync_changes BEGIN SELECT RAISE(ABORT, 'test_failure'); END;");
+  expect(() => repo.update(A, { entityType: 'task', id, baseVersion: 2, patch: { assignee: 'partner' } })).toThrow(/test_failure/);
+  expect(repo.get(A, 'task', id)).toMatchObject({ version: 2, data: { assignee: 'both' } });
+  expect(repo.journalSince(A, 0)).toHaveLength(2);
+  expect(database.sqlite.prepare('SELECT count(*) n FROM task_events').get()).toEqual({ n: 3 });
 });

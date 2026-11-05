@@ -378,12 +378,20 @@ CREATE TABLE worker_state (
 INSERT INTO worker_state VALUES (1,0,(SELECT coalesce(max(sequence),0) FROM sync_changes));
 `;
 
+// RAZ-12 review: ownership is not authorship. Historical/system events stay unknown.
+const notificationActorsSql = `
+ALTER TABLE sync_changes ADD COLUMN actor_id TEXT REFERENCES users(id);
+ALTER TABLE task_events ADD COLUMN actor_id TEXT REFERENCES users(id);
+ALTER TABLE task_events ADD COLUMN previous_assignee TEXT CHECK(previous_assignee IN ('self','partner','both'));
+`;
+
 export const migrations: readonly Migration[] = [
   { version: 1, name: 'accounts_sessions', sql: accounts },
   { version: 2, name: 'domain_sync_push', sql: domain },
   { version: 3, name: 'sync_tombstones_state', sql: syncServer },
   { version: 4, name: 'task_semantic_events', sql: taskEventsSql },
   { version: 5, name: 'push_worker', sql: pushWorkerSql },
+  { version: 6, name: 'notification_actors', sql: notificationActorsSql },
 ];
 export const LATEST_SCHEMA_VERSION = migrations.length;
 

@@ -127,6 +127,33 @@ it('starsza zainstalowana PWA zachowuje strict kontrakt ustawień i eksportu; ro
   }
 });
 
+it('HTTP sync z retry: autor z sesji, domyślne przypisanie both i zakupy nie powiadamiają autora', async () => {
+  const { ReminderWorker } = await import('../../worker/src/worker.js');
+  await subscribe(); await subscribe(b, cookieB, randomUUID(), { ...subscription, endpoint: 'https://web.push.apple.com/b' });
+  for (const [id, cookie] of [[a, cookieA], [b, cookieB]]) {
+    expect((await app.inject({ method: 'PATCH', url: '/api/settings', headers: headers(id, cookie), payload: { shoppingNotifications: true } })).statusCode).toBe(200);
+  }
+  const target = randomUUID(), list = randomUUID();
+  const payload = { protocolVersion: 2, deviceId: randomUUID(), mutations: [
+    { clientMutationId: randomUUID(), entityId: target, entityType: 'task', command: 'create', baseVersion: 0, visibility: 'shared',
+      data: { title: 'Wspólne', description: '', assignee: 'both', dueDate: null, dueAt: null, timezone: 'Europe/Warsaw', completedAt: null, recurrence: null } },
+    { clientMutationId: randomUUID(), entityId: list, entityType: 'shopping_list', command: 'create', baseVersion: 0, visibility: 'shared', data: { name: 'Zakupy' } },
+  ] };
+  for (let retry = 0; retry < 2; retry++) {
+    const response = await app.inject({ method: 'POST', url: '/api/sync/push', headers: headers(), payload });
+    expect(response.json().results.map((r: { status: string }) => r.status)).toEqual(['ack', 'ack']);
+    expect(response.body).not.toMatch(/actorId|actor_id|previousAssignee|previous_assignee/);
+  }
+  const send = vi.fn(async () => undefined), worker = new ReminderWorker(db, send);
+  await worker.tick(); await worker.tick();
+  expect(send.mock.calls).toEqual([
+    [expect.objectContaining({ user_id: b }), expect.any(Object)],
+    [expect.objectContaining({ user_id: b }), expect.any(Object)],
+  ]);
+  const pull = await app.inject({ url: '/api/sync/pull', headers: { ...headers(b, cookieB), 'x-razem-protocol': '2' } });
+  expect(pull.statusCode).toBe(200); expect(pull.body).not.toMatch(/actorId|actor_id|previousAssignee|previous_assignee/);
+});
+
 it('zmiana konta przez login odpina push poprzedniej sesji przeglądarki, zachowując inne urządzenie', async () => {
   await subscribe();
   const auth = new AuthService(db, { argon2: FAST });

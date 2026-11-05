@@ -102,6 +102,7 @@ export const syncChanges = sqliteTable('sync_changes', {
   householdId: text('household_id').notNull(), ownerId: text('owner_id').notNull(),
   visibility: text('visibility', { enum: ['private', 'shared'] }).notNull(),
   version: integer('version').notNull(), changedAt: text('changed_at').notNull(),
+  actorId: text('actor_id'),
 });
 export const mutationReceipts = sqliteTable('mutation_receipts', {
   userId: text('user_id').notNull(), deviceId: text('device_id').notNull(), clientMutationId: text('client_mutation_id').notNull(),
@@ -157,4 +158,5 @@ export const taskEvents = sqliteTable('task_events', {
   entityId: text('entity_id').notNull(), version: integer('version').notNull(), kind: text('kind').notNull(),
   occurrenceKey: text('occurrence_key'), householdId: text('household_id').notNull(), ownerId: text('owner_id').notNull(),
   visibility: text('visibility', { enum: ['private', 'shared'] }).notNull(), changedAt: text('changed_at').notNull(),
+  actorId: text('actor_id'), previousAssignee: text('previous_assignee', { enum: ['self', 'partner', 'both'] }),
 });
