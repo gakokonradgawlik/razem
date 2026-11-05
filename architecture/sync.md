@@ -140,6 +140,17 @@ kolejka, ACK/rebase, pull, konflikty, eksport), `sync.ts` (silnik), `controller.
   ustawia status, pyta `/api/me` i przełącza kartę na konto sesji; kolejka A zostaje w bazie A.
   Nagłówek niczego nie autoryzuje – decyduje sesja. `stop()` silnika (wylogowanie, zmiana konta
   w tej karcie) przerywa trwające żądanie (AbortController) i kończy cykl przed kolejnym.
+  Kontroler przed zamknięciem bazy czeka na koniec przerwanego cyklu (`stopAndSettle`), więc lease
+  zwalnia się w otwartej bazie i ponowne logowanie tego konta od razu wysyła jego kolejkę.
+- **Stan interfejsu związany z kontem**: każda aktywacja bazy konta (logowanie, przełączenie,
+  przejęcie sesji z innej karty, wylogowanie) dostaje nową **generację**. `AppServices` niesie
+  `accountKey` (konto + generacja), a wszystkie ich odczyty i komendy są związane z tą generacją:
+  wywołanie zachowane przez ekran poprzedniego konta (np. „Zapisz” formularza A) dostaje
+  `account_changed` i nic nie zapisuje, a odczyt – `unavailable`. `App` montuje ekrany z kluczem
+  `accountKey`, więc po zmianie konta wartości formularzy, wczytane rekordy i callbacki A znikają
+  z widoku; `useLoad` ma `accountKey` w zależnościach (rewizje różnych baz mogą być równe).
+  Użytkownik widzi komunikat „Otwarto konto: …”; niezapisany formularz A nie jest przenoszony
+  (szkic nie jest zachowywany), a niewysłane zmiany A czekają w bazie A.
   Backoff wykładniczy 2 s…5 min z jitterem dla ticków; zdarzenia użytkownika/sieci go pomijają;
   `Retry-After` przy 429. `navigator.onLine` to tylko podpowiedź: próba zawsze idzie do serwera,
   „Offline” = nieudana próba sieciowa przy `onLine=false`; odpowiedź HTTP 5xx/proxy = „Serwer

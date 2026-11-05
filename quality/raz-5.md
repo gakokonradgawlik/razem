@@ -17,9 +17,9 @@ Ekrany RAZ-3 działają teraz na lokalnej bazie (lista odświeża się po każde
 | Kontrola | Wynik |
 | --- | --- |
 | `npm run typecheck` | PASS |
-| `npm test` | PASS: 17 plików, 164 testy (po 1. review: +3 klienta, +1 serwera; po 2. review: +3 UI, +1 klienta) |
+| `npm test` | PASS: 17 plików, 167 testów (po 1. review: +3 klienta, +1 serwera; po 2. review: +3 UI, +1 klienta; po 3. review: +3 UI) |
 | `npm run build` | PASS (ostrzeżenie Vite o paczce >500 kB jak w RAZ-3) |
-| `npm run test:e2e` | PASS 39, 1 pominięty (safe-area tylko Chromium, jak w RAZ-3); po 2. review nie uruchamiano ponownie – zmiana dotyczy tylko scalania, pokrytego testami UI na prawdziwym kontrolerze i serwerze |
+| `npm run test:e2e` | PASS 39, 1 pominięty (safe-area tylko Chromium, jak w RAZ-3); uruchomione ponownie po 3. review (commit 88c3d72) |
 
 ### Klient ↔ prawdziwy serwer (vitest, `apps/web/src/offline/sync.test.ts`, 21 testów)
 Dexie na fake-indexeddb (osobna fabryka = osobny telefon, wspólna = karty), serwer Fastify +
@@ -44,7 +44,7 @@ SQLite z RAZ-4 przez `app.inject` z ciasteczkami, CSRF i wstrzykiwanymi awariami
 - Upgrade bazy v1 z oczekującą mutacją: ten sam deviceId i clientMutationId, wysłane, kolejka pusta.
 - Odrzucona zmiana (`not_found`): stan „wymaga działania”, brak ponownej wysyłki, inne zmiany przechodzą, można ją odrzucić.
 
-### UI na prawdziwym kontrolerze (vitest jsdom, `apps/web/src/offline/ui.test.tsx`, 6 testów)
+### UI na prawdziwym kontrolerze (vitest jsdom, `apps/web/src/offline/ui.test.tsx`, 9 testów)
 Status „Zsynchronizowano” → „Serwer niedostępny · zmiany czekają na wysłanie (1)” → ponownie po ACK;
 brak miejsca: formularz nie potwierdza zapisu, treść zostaje, odznaka z „Eksportuj”. Konflikt: odznaka
 „1 zmiana wymaga sprawdzenia” → ekran z obiema wersjami → „Połącz ręcznie” → zapis na serwerze (wersja 3).
@@ -55,6 +55,17 @@ Po 2. review – scalanie rekordów podrzędnych (`it.each`): `shopping_item` (r
 w SQLite ma wersję 3 i niezmienione powiązanie, kolejka pusta. Klient: merge z podrobionym `listId`
 zapisuje się z `listId` rekordu. Mutacyjnie: bez poprawki ekranu i warstwy 3 testy UI nie przechodzą;
 bez poprawki warstwy nie przechodzi test klienta.
+Po 3. review – przełączenie konta przy otwartym ekranie A (logowanie B „w innej karcie”, czyli zmiana
+ciasteczka, potem sync wykrywa B i przełącza kartę):
+- wypełniony formularz `/notatki/nowa` (prywatna treść A): po przełączeniu pole jest puste, treści A nie
+  ma w DOM, komunikat „Otwarto konto: Konto B”; zachowany callback `saveRecord` A → `account_changed`,
+  `listRecords` A → `unavailable`; baza B bez rekordów i kolejki, na serwerze 0 notatek (też z ownerem B);
+  pending A po ponownym logowaniu A trafia na serwer jako A/private;
+- otwarte szczegóły i lista prywatnej notatki A przy **równych rewizjach** obu baz (ustawione celowo):
+  po przełączeniu treść A znika z widoku, baza B pusta, serwer bez notatek B.
+Mutacyjnie: bez związania komend z generacją, bez remountu ekranów albo bez `stopAndSettle` (lease A
+zostawał w zamkniętej bazie i ponowne logowanie A nie wysyłało kolejki przez 60 s) test formularza nie
+przechodzi; bez remountu i bez `accountKey` w `useLoad` nie przechodzą też testy szczegółów i listy.
 Mapowanie stanu na status: `apps/web/src/ui/ui.test.ts`.
 
 ### E2E w przeglądarkach (`tests/e2e/offline.spec.ts`, Chromium + WebKit/iPhone 13)
