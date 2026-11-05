@@ -713,3 +713,40 @@ it('sync v1 wymaga aktualizacji przed zapisem lub zwróceniem danych; v2 odczytu
   await a.sync();
   expect(a.records()).toMatchObject([{ data: { title: 'Stary klient', recurrence: { frequency: 'daily' } } }]);
 });
+
+it('pełny snapshot po retencji journala stronicuje rekordy i tombstones razem, z ACL obu kont i limitem bajtów', async () => {
+  const { a, b } = await devices();
+  const privateA = create('note', note('PRIVATE A'), 'private', '00000000-0000-4000-8000-000000000010');
+  const shared = create('note', note('Wspólna usunięta'), 'shared', '00000000-0000-4000-8000-000000000030');
+  const privateB = create('note', note('PRIVATE B'), 'private', '00000000-0000-4000-8000-000000000050');
+  const liveA = create('note', note('Żywa A'), 'shared', '00000000-0000-4000-8000-000000000020');
+  const liveB = create('note', note('Żywa B'), 'shared', '00000000-0000-4000-8000-000000000040');
+  await a.push(privateA, shared, liveA); await b.push(privateB, liveB);
+  for (const mutation of [privateA, shared]) await a.push(versioned('delete', 'note', String(mutation.entityId), 1));
+  await b.push(versioned('delete', 'note', String(privateB.entityId), 1));
+  await travel(31 * DAY); sync.maintenance();
+  await travel(91 * DAY); sync.maintenance(); // Even the purge journal and old receipts are gone.
+  expect(count('SELECT count(*) AS n FROM sync_changes')).toBe(0);
+  for (const [device, own, other] of [[a, privateA, privateB], [b, privateB, privateA]] as const) {
+    const states: ServerState[] = []; device.cursor = undefined;
+    let page: PullResponse;
+    do {
+      page = await device.pullPage(1);
+      expect(page.status).toBe('ok');
+      if (page.status !== 'ok') throw new Error('Unexpected resync');
+      expect(page.changes).toHaveLength(1);
+      states.push(...page.changes);
+    } while (page.hasMore);
+    const ids = states.map((state) => state.kind === 'record' ? state.record.id : state.tombstone.id);
+    expect(ids).toEqual([String(own.entityId), String(shared.entityId), String(liveA.entityId), String(liveB.entityId)].sort());
+    expect(new Set(ids).size).toBe(4);
+    expect(states.filter((state) => state.kind === 'tombstone')).toHaveLength(2);
+    expect(JSON.stringify(states)).not.toContain(String(other.entityId));
+    expect((await device.pullPage(1))).toMatchObject({ status: 'ok', mode: 'delta', hasMore: false, changes: [] });
+  }
+  // Byte pagination must resume after a tombstone as well as after a record.
+  const page = sync.records.snapshotPage(A, { type: 0, id: null }, 200, 1);
+  expect(page.changes).toHaveLength(1); expect(page.changes[0]!.kind).toBe('tombstone');
+  const next = sync.records.snapshotPage(A, page.next!, 200, 1);
+  expect(next.changes).toHaveLength(1); expect(next.changes[0]!.kind).toBe('record');
+});

@@ -459,6 +459,53 @@ describe('pełna resynchronizacja, stronicowanie, karty i migracja', () => {
     expect(serverRow(kept)).toMatchObject({ body: 'edytowane offline', version: 2 });
   });
 
+  it('wygasły cursor, retencja i przerwany snapshot: restart zachowuje konflikt i nowe pending, stare ID nie wraca', async () => {
+    const pa = new Phone(server), pb = new Phone(server);
+    const a = await signedIn(pa, 'a'); let b = await signedIn(pb, 'b', { pullLimit: 1 });
+    const id = ok(await a.command((s) => s.create('note', note('Plan', 'baza'), 'shared')));
+    await a.syncNow(); await b.syncNow(); pb.setOffline(true);
+    ok(await b.command((s) => s.update('note', id, { body: 'Niewysłana intencja po usunięciu' })));
+    ok(await a.command((s) => s.remove('note', id))); await a.syncNow();
+    pb.setOffline(false); await b.syncNow();
+    const [conflict] = await store(b).db.conflicts.toArray();
+    expect(conflict!.server.kind).toBe('record');
+    const expired = await store(b).getMeta<string>('cursor');
+    server.clock.now += 91 * 86_400_000; server.sync.maintenance();
+    expect(serverRow(id)).toBeUndefined();
+    // Renew the expired session, retaining the old cursor and conflict in IndexedDB.
+    expect(await b.login(ACCOUNTS.b.login, ACCOUNTS.b.password)).toEqual({ ok: true });
+    const check = await b.api.pull(expired, 1, ACCOUNTS.b.id);
+    expect(check).toMatchObject({ status: 'resync_required', reason: 'cursor_expired' });
+    let pending = '';
+    pb.network.afterResponse = async (request) => {
+      if (request !== 'GET /api/sync/pull') return;
+      pb.network.afterResponse = null;
+      // A user saves during resync; the following snapshot request fails.
+      pending = ok(await b.command((s) => s.create('note', note('Podczas resync', 'zachowaj'), 'private')));
+      pb.network.outage = 503;
+    };
+    await b.syncNow();
+    expect(await store(b).getMeta('snapshotActive')).toBe(true);
+    expect(await store(b).db.conflicts.get(conflict!.id)).toEqual(conflict);
+    const queue = await store(b).db.queue.toArray(); expect(queue).toHaveLength(1);
+    await b.dispose(); open.splice(open.indexOf(b), 1); pb.setOffline(true);
+    b = pb.tab({ pullLimit: 1 }); open.push(b); await b.init();
+    expect(await store(b).db.queue.toArray()).toEqual(queue);
+    expect(await store(b).db.conflicts.get(conflict!.id)).toEqual(conflict);
+    pb.setOffline(false); pb.network.outage = null; await b.syncNow();
+    expect(await store(b).getMeta('snapshotActive')).toBe(false);
+    expect(await store(b).db.queue.count()).toBe(0);
+    expect(serverRow(pending)).toMatchObject({ body: 'zachowaj', version: 1 });
+    const current = (await store(b).db.conflicts.get(conflict!.id))!;
+    expect(current.local!.data.body).toBe('Niewysłana intencja po usunięciu');
+    expect(current.server.kind).toBe('tombstone');
+    ok(await b.command((s) => s.resolve(current.id, { choice: 'mine' }))); await b.syncNow();
+    expect(serverRow(id)).toBeUndefined(); // Explicit recovery creates a new ID.
+    const recovered = await store(b).list('note');
+    expect(recovered.filter((r) => r.data.body === 'Niewysłana intencja po usunięciu')).toHaveLength(1);
+    expect(recovered.every((r) => r.id !== id)).toBe(true);
+  });
+
   it('dwie karty: jedna kolejka naraz, bez podwójnej wysyłki; druga widzi wynik (Web Locks i lease)', async () => {
     for (const locks of [undefined, null] as const) {
       const phone = new Phone(server);

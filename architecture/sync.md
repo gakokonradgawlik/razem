@@ -231,3 +231,15 @@ różnica zachowuje szkic i wymaga porównania/połączenia. To lokalny warunek,
 bez zmiany protokołu v2, SQLite v4 ani Dexie v2. Konflikty zapisanych zmian nadal
 korzystają z istniejącego mechanizmu wersji i ręcznego scalania.
 Szczegóły: [notes.md](notes.md), dowody: [../quality/raz-10.md](../quality/raz-10.md).
+
+
+## RAZ-14 — pełna resynchronizacja po retencji
+
+Pełny snapshot zawiera również trwałe tombstones dostępne kontu, z tą samą ACL,
+limitem liczby/bajtów i kolejnością `(typ, id)` co rekordy. Koperta sync pozostaje v2:
+`changes` już obsługuje oba warianty stanu. Bez tombstones konflikt wykryty przed
+wygaśnięciem cursora zachowywał nieaktualny stan kosza po pełnej resynchronizacji,
+co wymuszało ponowny konflikt przy próbie odzyskania treści. Snapshot aktualizuje
+teraz stan serwera w istniejącym konflikcie; lokalna intencja i outbox pozostają.
+Przerwanie snapshotu i restart nie kasują tych danych. Odzyskanie po trwałym
+usunięciu tworzy nowe ID wyłącznie po świadomym wyborze użytkownika.

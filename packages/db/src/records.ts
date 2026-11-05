@@ -312,9 +312,9 @@ export class RecordRepository {
     });
   }
 
-  /** Records of one snapshot page in SNAPSHOT_ORDER, keyset (type, id) after the given position; trash included. */
+  /** Records and durable tombstones in (type, id) order, with the same ACL and cursor. */
   snapshotPage(scope: AccountScope, after: { type: number; id: string | null }, limit: number, byteBudget = Infinity) {
-    const records: SyncRecord[] = [];
+    const changes: ServerState[] = [];
     let bytes = 0;
     let position = { ...after };
     for (let typeIndex = after.type; typeIndex < SNAPSHOT_ORDER.length; typeIndex++) {
@@ -322,17 +322,27 @@ export class RecordRepository {
       const table = this.table(type);
       const afterId = typeIndex === after.type ? after.id : null;
       const filter = afterId === null ? accessPolicy.readableFilter(table, scope) : and(accessPolicy.readableFilter(table, scope), gt(table.id, afterId));
-      const rows = this.database.db.select().from(table).where(filter).orderBy(asc(table.id)).limit(limit - records.length + 1).all() as Array<Record<string, unknown>>;
-      for (const row of rows) {
-        const record = this.toRecord(type, row);
-        const size = Buffer.byteLength(JSON.stringify(record));
-        if (records.length >= limit || (records.length > 0 && bytes + size > byteBudget)) return { records, next: position };
-        records.push(record);
+      const remaining = limit - changes.length + 1;
+      const rows = this.database.db.select().from(table).where(filter).orderBy(asc(table.id)).limit(remaining).all() as Array<Record<string, unknown>>;
+      const removed = this.database.db.select().from(tombstones).where(and(
+        eq(tombstones.entityType, type), accessPolicy.readableFilter(tombstones as unknown as MetaColumns, scope),
+        afterId === null ? undefined : gt(tombstones.id, afterId),
+      )).orderBy(asc(tombstones.id)).limit(remaining).all();
+      const states: ServerState[] = [
+        ...rows.map((row): ServerState => ({ kind: 'record', record: this.toRecord(type, row) })),
+        ...removed.map((row): ServerState => ({ kind: 'tombstone', tombstone: tombstoneSchema.parse({ entityType: row.entityType, id: row.id, version: row.version, deletedAt: row.deletedAt }) })),
+      ];
+      const idOf = (state: ServerState) => state.kind === 'record' ? state.record.id : state.tombstone.id;
+      states.sort((a, b) => idOf(a) < idOf(b) ? -1 : idOf(a) > idOf(b) ? 1 : 0);
+      for (const state of states) {
+        const size = Buffer.byteLength(JSON.stringify(state));
+        if (changes.length >= limit || (changes.length > 0 && bytes + size > byteBudget)) return { changes, next: position };
+        changes.push(state);
         bytes += size;
-        position = { type: typeIndex, id: record.id };
+        position = { type: typeIndex, id: idOf(state) };
       }
     }
-    return { records, next: null };
+    return { changes, next: null };
   }
 
   /** Readable journal entries with after < sequence <= upTo, oldest first. */
