@@ -389,7 +389,7 @@ describe('sesja i konta', () => {
     phone.network.afterResponse = async (done) => { if (done === 'POST /api/sync/push') { phone.network.afterResponse = null; engine.stop(); } };
     expect(await engine.sync()).toBe('skipped_locked');
     expect(server.pushes).toHaveLength(1);
-    expect(phone.network.requests.slice(before)).toEqual(['GET /api/me', 'POST /api/sync/push']);
+    expect(phone.network.requests.slice(before)).toEqual(['GET /api/me', 'GET /api/settings', 'POST /api/sync/push']);
     expect(server.count('notes', "title LIKE 'Przerwany%'")).toBe(1);
   });
 

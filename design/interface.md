@@ -69,3 +69,18 @@ pozostaje „Tylko ja”. Edycja zachowuje tekst przy błędach, a nowsza wersja
 podczas otwartego formularza wymaga porównania i świadomego przyjęcia podstawy
 po ręcznym połączeniu. Konflikty zapisanych zmian obsługuje ekran „Zmiany do
 sprawdzenia”. Szczegóły: [architecture/notes.md](../architecture/notes.md).
+
+## Dzisiaj i ustawienia po RAZ-11
+
+Dzisiaj agreguje prawdziwe lokalne dane: zadania dziś/zaległe, siedem dni kalendarza
+z ważnymi datami oraz aktywne listy zakupów. Do pięciu pozycji na sekcję i skrót do
+pełnego modułu. Odhaczenie zadania i Cofnij są dostępne bezpośrednio na Dzisiaj;
+menu Dodaj obejmuje wszystkie pięć typów wpisów. Brak dostępu do bazy ma odrębny
+komunikat, a puste stany prowadzą do utworzenia własnych danych.
+
+Ustawienia prowadzą do Profilu i domowników (własna nazwa, nazwa partnera, strefa
+domu) i Preferencji powiadomień. Dane ustawień są czytane lokalnie, ich zapis online
+jest opisany przed zatwierdzeniem. Motyw jest preferencją urządzenia. Formularze
+zachowują treść po błędzie. Wysyłka push i pełny eksport jawnie niedostępne do
+RAZ-12/13; eksport pending działa. Kosz pokazuje datę usunięcia, błędy przywracania
+i odróżnia niedostępność od pustki. Szczegóły: [today-settings.md](../architecture/today-settings.md).

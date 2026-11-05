@@ -5,7 +5,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { loginRequestSchema, passwordChangeRequestSchema } from '@razem/contracts';
-import type { EntityType } from '@razem/contracts';
+import type { EntityType, Settings, SettingsPatch } from '@razem/contracts';
 import type { z } from 'zod';
 
 export type LoginRequest = z.input<typeof loginRequestSchema>;
@@ -57,6 +57,8 @@ export interface AppServices {
   /** No form may accept input until the initial account database is open. */
   initializing?: boolean;
   session: Session | null;
+  settings?: Settings | undefined;
+  updateSettings?(patch: SettingsPatch): Promise<ActionResult>;
   /**
    * Opaque identity of the open account database (new on every sign-in, account switch
    * and logout). The app remounts every screen when it changes, so form values and loaded
@@ -113,6 +115,7 @@ export function ServicesProvider({ value, children }: { value: AppServices; chil
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }
 export const useServices = () => useContext(ServicesContext);
+export const useTimezone = () => useServices().settings?.household.timezone ?? 'Europe/Warsaw';
 
 /** Polish user-facing message for a failed action; no API names or technical detail. */
 export function failureMessage(result: Exclude<ActionResult, { ok: true }>): string {

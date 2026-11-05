@@ -47,7 +47,7 @@ it('każdy ekran MVP (także szczegóły i edycja) ma polski tytuł; bez magazyn
     } else await waitFor(() => expect(screen.getAllByRole('link').some((link) => link.classList.contains('button'))).toBe(true));
   }
   go('/kosz');
-  expect(await screen.findByText('Kosz jest pusty')).toBeTruthy();
+  expect(await screen.findByText('Nie można wczytać kosza z tego urządzenia. Zaloguj się lub spróbuj ponownie.')).toBeTruthy();
   go('/nie-ma-takiej');
   expect(screen.getByRole('heading', { level: 1, name: 'Nie znaleziono' })).toBeTruthy();
 });
@@ -72,7 +72,7 @@ it('menu dodawania na ekranie Dzisiaj otwiera się, ma nazwy i zamyka Escape', (
   expect(button.getAttribute('aria-expanded')).toBe('false');
   fireEvent.click(button);
   const menu = screen.getByRole('list', { name: 'Dodaj' });
-  expect(within(menu).getAllByRole('link').map((link) => link.textContent)).toEqual(['Zadanie', 'Wydarzenie', 'Lista zakupów', 'Notatka']);
+  expect(within(menu).getAllByRole('link').map((link) => link.textContent)).toEqual(['Zadanie', 'Wydarzenie', 'Lista zakupów', 'Notatka', 'Ważna data']);
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(screen.queryByRole('list', { name: 'Dodaj' })).toBeNull();
 });
@@ -203,14 +203,14 @@ it('motyw: wybór jest zapamiętany na urządzeniu i ustawia data-theme', () => 
 
 it('status synchronizacji nie udaje synchronizacji bez sesji i rozpoznaje offline', () => {
   render(<App />);
-  expect(screen.getByRole('status').textContent).toBe('Nie zalogowano');
+  expect(document.querySelector('.sync-badge')!.textContent).toBe('Nie zalogowano');
   cleanup();
   render(<App services={{ ...unavailableServices, pendingChanges: 3 }} />);
-  expect(screen.getByRole('status').textContent).toBe('Zaloguj się, aby wysłać zmiany (3)Zaloguj się');
-  expect(within(screen.getByRole('status')).getByRole('link', { name: 'Zaloguj się' }).getAttribute('href')).toBe('/logowanie');
+  expect(document.querySelector('.sync-badge')!.textContent).toBe('Zaloguj się, aby wysłać zmiany (3)Zaloguj się');
+  expect(within(document.querySelector<HTMLElement>('.sync-badge')!).getByRole('link', { name: 'Zaloguj się' }).getAttribute('href')).toBe('/logowanie');
   const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
   act(() => { window.dispatchEvent(new Event('offline')); });
-  expect(screen.getByRole('status').textContent).toBe('Offline · zmiany czekają na wysłanie (3)');
+  expect(document.querySelector('.sync-badge')!.textContent).toBe('Offline · zmiany czekają na wysłanie (3)');
   online.mockRestore();
 });
 

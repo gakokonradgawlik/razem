@@ -1,8 +1,8 @@
 // HTTP client of the PWA. Every request has a time limit; the caller decides what a
 // failure means. A response is never interpreted as success unless it parses with the
 // shared contract. The fetcher is injectable so tests talk to the real Fastify app.
-import { PROTOCOL_VERSION, SYNC_PROTOCOL_HEADER, SYNC_ACCOUNT_HEADER, apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema } from '@razem/contracts';
-import type { MeResponse, PullResponse, PushRequest, PushResponse } from '@razem/contracts';
+import { PROTOCOL_VERSION, SYNC_PROTOCOL_HEADER, SYNC_ACCOUNT_HEADER, apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema, settingsSchema, settingsPatchSchema } from '@razem/contracts';
+import type { MeResponse, PullResponse, PushRequest, PushResponse, SettingsPatch } from '@razem/contracts';
 
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 export type ApiFailure =
@@ -64,13 +64,21 @@ export class Api {
 
   async health() { return this.parse(healthSchema, await this.request('/healthz')); }
   async me(): Promise<MeResponse> { return this.parse(meResponseSchema, await this.request('/api/me')); }
+  async settings(account: string, abort?: AbortSignal, patch?: SettingsPatch) {
+    const result = this.parse(settingsSchema, await this.request('/api/settings', {
+      headers: { [SYNC_ACCOUNT_HEADER]: account },
+      ...(patch ? { method: 'PATCH', body: JSON.stringify(settingsPatchSchema.parse(patch)) } : {}),
+    }, abort));
+    if (result.userId !== account) throw new ApiError('account_mismatch');
+    return result;
+  }
   async login(login: string, password: string): Promise<MeResponse> {
     return this.parse(meResponseSchema, await this.request('/api/auth/login', { method: 'POST', body: JSON.stringify({ login, password }) }));
   }
   async changePassword(currentPassword: string, newPassword: string): Promise<MeResponse> {
     return this.parse(meResponseSchema, await this.request('/api/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }));
   }
-  async logout(): Promise<void> { await this.request('/api/auth/logout', { method: 'POST', body: '{}' }); }
+  async logout(account: string): Promise<void> { await this.request('/api/auth/logout', { method: 'POST', body: '{}', headers: { [SYNC_ACCOUNT_HEADER]: account } }); }
   /**
    * Sync requests carry the account their local database belongs to; the server checks it
    * against the session of the same request (409 account_mismatch), so a session switched to

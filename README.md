@@ -179,3 +179,22 @@ w tytule/treści, kosz i przywracanie. Udostępnienie wymaga potwierdzenia i two
 niezależną wspólną kopię; oryginał pozostaje prywatny. Konflikt pozwala połączyć
 tekst ręcznie, a błędy zapisu zachowują formularz. Szczegóły i granice:
 [architecture/notes.md](architecture/notes.md), dowody: [quality/raz-10.md](quality/raz-10.md).
+
+## Dzisiaj i ustawienia (RAZ-11)
+
+Dzisiaj pokazuje lokalne zadania na dziś/zaległe (z odhaczaniem i Cofnij), wydarzenia
+oraz ważne daty z siedmiu dni i aktywne zakupy. Menu Dodaj otwiera formularze pięciu
+typów; zapis działa offline. Każda sekcja ma skrót do pełnego modułu.
+
+Ustawienia → Profil i domownicy: własna nazwa, nazwa drugiej osoby, wspólna strefa
+domu. Zapis profilu/strefy i preferencji powiadomień wymaga serwera; ostatnie
+ustawienia są dostępne po restarcie offline. Motyw zapisuje się na urządzeniu.
+Zmiana strefy nie przesuwa istniejących terminów. Pełny eksport będzie dostępny
+z RAZ-13, wysyłka powiadomień z RAZ-12; aktualnie są jasno oznaczone jako niedostępne.
+Eksport niewysłanych zmian, kosz, konflikty, instalacja i wylogowanie są dostępne.
+Szczegóły: [architecture/today-settings.md](architecture/today-settings.md),
+dowody: [quality/raz-11.md](quality/raz-11.md).
+
+Test Dzisiaj/ustawień uruchamia dwa dodatkowe izolowane serwery testowe na
+127.0.0.1:4322/4323 (Chromium/WebKit), aby zmiana strefy nie wpływała na inne testy.
+Playwright zatrzymuje je i usuwa syntetyczne bazy po zakończeniu.

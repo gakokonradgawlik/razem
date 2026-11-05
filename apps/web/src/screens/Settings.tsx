@@ -1,17 +1,21 @@
 import { useState, useSyncExternalStore } from 'react';
 import { usePwaState, useStandalone } from '../pwa.js';
 import { persistenceSnapshot, subscribePersistence } from '../storage-persistence.js';
-import { DEFAULT_TIMEZONE } from '@razem/contracts';
-import { Button, List, ListRow, Notice, ScreenHeader, Section, Segmented, SyncBadge } from '../ui/components.js';
+import { settingsPatchSchema } from '@razem/contracts';
+import type { Settings } from '@razem/contracts';
+import { FormScreen } from '../ui/form.js';
+import type { Errors } from '../ui/form.js';
+import { Button, List, ListRow, Notice, ScreenHeader, Section, Segmented, SyncBadge, TextField, Toggle } from '../ui/components.js';
 import { Icon } from '../ui/icons.js';
 import { navigate } from '../router.js';
-import { failureMessage, useServices, useSyncState } from '../services.js';
+import { failureMessage, useServices, useSyncState, useTimezone } from '../services.js';
 import { themeLabels, useTheme } from '../theme.js';
 import type { ThemePreference } from '../theme.js';
 
 export function SettingsScreen() {
   const services = useServices();
   const { session } = services;
+  const timezone = useTimezone();
   const [theme, setTheme] = useTheme();
   const sync = useSyncState();
   const [message, setMessage] = useState<{ tone: 'danger' | 'success'; text: string } | null>(null);
@@ -29,6 +33,7 @@ export function SettingsScreen() {
           {session
             ? <ListRow icon="people" iconTone="blue" title={session.displayName} detail={session.login} />
             : <ListRow to="/logowanie" icon="people" iconTone="blue" title="Zaloguj się" detail="Konta zakłada administrator domowego serwera" />}
+          <ListRow to="/ustawienia/profil" icon="people" iconTone="blue" title="Profil i domownicy" disabled={!session} detail={services.settings?.members.map((member) => member.displayName).join(' · ') ?? 'Nazwy domowników i strefa domu'} />
           <ListRow to="/ustawienia/haslo" icon="key" iconTone="gray" title="Zmień hasło" disabled={!session} detail={session ? undefined : 'Wymaga zalogowania'} />
         </List>
       </Section>
@@ -45,15 +50,16 @@ export function SettingsScreen() {
           {session && <ListRow icon="cloud" iconTone="blue" title={syncing ? 'Synchronizowanie…' : 'Synchronizuj teraz'} disabled={syncing}
             onClick={() => { setSyncing(true); void (services.syncNow?.() ?? Promise.resolve()).finally(() => setSyncing(false)); }} />}
           {session && <ListRow to="/zmiany" icon="alert" iconTone={attention ? 'red' : 'gray'} title="Zmiany do sprawdzenia" value={String(attention)} />}
-          <ListRow icon="clock" iconTone="gray" title="Strefa czasowa" value={DEFAULT_TIMEZONE} />
+          <ListRow to="/ustawienia/profil" disabled={!session} icon="clock" iconTone="gray" title="Strefa czasowa" detail={timezone} />
         </List>
       </Section>
-      <Section title="Powiadomienia" footer="Prośba o zgodę pojawi się dopiero po naciśnięciu „Włącz powiadomienia”.">
-        <List><ListRow icon="bell" iconTone="red" title="Powiadomienia" value="Niedostępne" detail="Będą dostępne po zalogowaniu w zainstalowanej aplikacji" /></List>
+      <Section title="Powiadomienia">
+        <List><ListRow to="/ustawienia/powiadomienia" disabled={!session} icon="bell" iconTone="red" title="Preferencje powiadomień" detail="Wysyłka będzie dostępna w kolejnej wersji" /></List>
       </Section>
       <Section title="Dane">
         <StorageNotice />
         <List>
+          <ListRow disabled icon="download" iconTone="gray" title="Eksport wszystkich moich i wspólnych danych" detail="Niedostępny w tej wersji. Możesz pobrać niewysłane zmiany poniżej." />
           {session && services.exportPending
             ? <ListRow onClick={() => void exportPending()} icon="download" iconTone="green" title="Eksport niewysłanych zmian" detail={services.pendingChanges ? `Zmiany tylko na tym urządzeniu: ${services.pendingChanges}` : 'Brak niewysłanych zmian'} />
             : <ListRow icon="download" iconTone="green" title="Eksport niewysłanych zmian" value="Niedostępne" detail="Wymaga zalogowania" />}
@@ -144,4 +150,63 @@ function StorageNotice() {
       : 'Po otwarciu konta poprosimy przeglądarkę o ochronę magazynu. '}
     Usunięcie danych witryny lub utrata urządzenia może usunąć niewysłane zmiany. Synchronizuj regularnie i w razie problemów eksportuj niewysłane zmiany.
   </Notice>;
+}
+
+function MissingSettings({ title }: { title: string }) {
+  return <><ScreenHeader title={title} back={{ to: '/ustawienia', label: 'Ustawienia' }} /><Notice tone="warning">Połącz się z serwerem i wybierz „Synchronizuj teraz”, aby pobrać ustawienia domu.</Notice></>;
+}
+export function ProfileScreen() {
+  const { settings } = useServices();
+  return settings ? <ProfileForm settings={settings} /> : <MissingSettings title="Profil i domownicy" />;
+}
+function ProfileForm({ settings }: { settings: Settings }) {
+  const services = useServices();
+  const [baseline] = useState(settings);
+  const own = baseline.members.find((member) => member.id === baseline.userId);
+  const [displayName, setDisplayName] = useState(own?.displayName ?? services.session?.displayName ?? '');
+  const [timezone, setTimezone] = useState(baseline.household.timezone);
+  const [errors, setErrors] = useState<Errors<{ displayName: string; timezone: string }>>({});
+  return <FormScreen title="Profil i domownicy" cancelTo="/ustawienia" doneTo="/ustawienia" errors={errors} setErrors={setErrors}
+    validate={() => {
+      const result = settingsPatchSchema.safeParse({ displayName, timezone });
+      if (result.success) return {};
+      return Object.fromEntries(result.error.issues.map((issue) => [issue.path[0], issue.path[0] === 'timezone' ? 'Podaj poprawną strefę, np. Europe/Warsaw.' : 'Wpisz nazwę od 1 do 200 znaków.']));
+    }}
+    onSubmit={() => {
+      const patch = { ...(displayName.trim() !== own?.displayName ? { displayName: displayName.trim() } : {}), ...(timezone !== baseline.household.timezone ? { timezone } : {}) };
+      return Object.keys(patch).length ? services.updateSettings?.(patch) ?? Promise.resolve({ ok: false, reason: 'not_implemented' }) : Promise.resolve({ ok: true });
+    }}>
+    <div className="group">
+      <TextField label="Twoja nazwa" value={displayName} onValue={setDisplayName} error={errors.displayName} maxLength={200} autoComplete="name" />
+      <p className="field__hint">Każdy domownik zmienia własną nazwę na swoim koncie.</p>
+      <List>{settings.members.filter((member) => member.id !== settings.userId).map((member) => <ListRow key={member.id} icon="people" title={member.displayName} detail="Druga osoba w domu" />)}</List>
+    </div>
+    <div className="group"><TextField label="Strefa czasowa domu" value={timezone} onValue={setTimezone} error={errors.timezone} hint="Np. Europe/Warsaw. Wspólne ustawienie zmienia dni w kalendarzu i porę przypomnień ważnych dat. Istniejące terminy zadań i godziny wydarzeń pozostają w swoich strefach." /></div>
+    <Notice>Zapis profilu i strefy wymaga połączenia z serwerem. Ostatnio pobrane ustawienia są dostępne offline.</Notice>
+  </FormScreen>;
+}
+
+export function NotificationsScreen() {
+  const { settings } = useServices();
+  return settings ? <NotificationsForm settings={settings} /> : <MissingSettings title="Powiadomienia" />;
+}
+function NotificationsForm({ settings }: { settings: Settings }) {
+  const services = useServices();
+  const [baseline] = useState(settings.notifications);
+  const [includeTitles, setIncludeTitles] = useState(baseline.includeTitles);
+  const [shoppingNotifications, setShoppingNotifications] = useState(baseline.shoppingNotifications);
+  const [errors, setErrors] = useState<Errors<Record<string, string>>>({});
+  return <FormScreen title="Powiadomienia" cancelTo="/ustawienia" doneTo="/ustawienia" errors={errors} setErrors={setErrors} validate={() => ({})}
+    onSubmit={() => {
+      if (!settings || !services.updateSettings) return Promise.resolve({ ok: false, reason: 'unavailable' });
+      const patch = { ...(includeTitles !== baseline.includeTitles ? { includeTitles } : {}), ...(shoppingNotifications !== baseline.shoppingNotifications ? { shoppingNotifications } : {}) };
+      return Object.keys(patch).length ? services.updateSettings(patch) : Promise.resolve({ ok: true });
+    }}>
+    <Notice tone="warning">Powiadomienia nie są jeszcze wysyłane. Możesz zapisać preferencje konta na przyszłość; zapis wymaga połączenia. Nie gwarantujemy alarmu offline.</Notice>
+    <div className="group">
+      <Button disabled>Włącz powiadomienia — niedostępne w tej wersji</Button>
+      <Toggle label="Tytuły na ekranie blokady" checked={includeTitles} onChange={setIncludeTitles} disabled={!settings} hint="Domyślnie treść będzie ogólna. Włączenie pozwoli pokazywać tytuły Twoich prywatnych i wspólnych wpisów na ekranie blokady." />
+      <Toggle label="Zmiany w zakupach" checked={shoppingNotifications} onChange={setShoppingNotifications} disabled={!settings} hint="Opcjonalne, domyślnie wyłączone." />
+    </div>
+  </FormScreen>;
 }

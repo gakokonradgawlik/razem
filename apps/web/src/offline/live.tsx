@@ -53,7 +53,9 @@ export function servicesFor(controller: AppController, snapshot: Snapshot): AppS
   const syncState = toSyncState(snapshot);
   return {
     initializing: snapshot.phase === 'starting',
-    session: account ? { login: account.login, displayName: account.displayName, mustChangePassword: account.mustChangePassword } : null,
+    session: account ? { login: account.login, displayName: snapshot.settings?.members.find((m) => m.id === userId)?.displayName ?? account.displayName, mustChangePassword: account.mustChangePassword } : null,
+    settings: snapshot.settings,
+    updateSettings: (patch) => controller.updateSettings(patch, generation),
     accountKey: `${account?.userId ?? '-'}#${generation}`,
     pendingChanges: snapshot.unsent,
     ...(syncState ? { syncState } : {}),
@@ -61,7 +63,7 @@ export function servicesFor(controller: AppController, snapshot: Snapshot): AppS
     attentionCount: snapshot.attention,
     login: async (request) => controller.login(request.login, request.password),
     changePassword: async (request) => controller.changePassword(request.currentPassword, request.newPassword),
-    logout: (options) => controller.logout(options),
+    logout: (options) => controller.logout(options, generation),
     syncNow: () => controller.syncNow(),
     saveRecord: async ({ entityType, visibility, data }) => done(await command((s) => s.create(entityType, data, visibility))),
     updateRecord: async ({ entityType, id, patch, expectedData }) => done(await command((s) => s.update(entityType, id, patch, expectedData))),

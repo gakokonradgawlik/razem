@@ -22,7 +22,7 @@ user.run('00000000-0000-4000-8000-0000000000bb', household, 'tomek@example.test'
 
 // PWA tests use two independently switchable origins (one per browser project).
 const pwa = process.argv[2] === '--pwa';
-const port = pwa ? Number(process.argv[3]) : 4319;
+const port = pwa || process.argv[2] === '--port' ? Number(process.argv[3]) : 4319;
 const webRoot = pwa ? resolve(directory, 'web') : resolve('apps/web/dist');
 if (pwa) {
   for (const release of ['A', 'B']) {

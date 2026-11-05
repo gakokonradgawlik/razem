@@ -18,7 +18,7 @@ import {
   EditImportantDateScreen, EditNoteScreen, ImportantDateDetailScreen, ImportantDatesScreen, MoreScreen, NewImportantDateScreen, NewNoteScreen,
   NoteDetailScreen, NotesScreen, TrashScreen, datePaths, notePaths,
 } from './screens/More.js';
-import { InstallScreen, SettingsScreen } from './screens/Settings.js';
+import { InstallScreen, SettingsScreen, ProfileScreen, NotificationsScreen } from './screens/Settings.js';
 import { ChangePasswordScreen, LoginScreen } from './screens/Auth.js';
 import { ChangesScreen, ConflictScreen, changePaths } from './screens/Changes.js';
 
@@ -59,6 +59,8 @@ export const routes: Route[] = [
   { path: datePaths.detail, title: 'Ważna data', tab: 'more', screen: ImportantDateDetailScreen },
   { path: datePaths.edit, title: 'Edytuj ważną datę', tab: 'more', screen: EditImportantDateScreen },
   { path: '/kosz', title: 'Kosz', tab: 'more', screen: TrashScreen },
+  { path: '/ustawienia/profil', title: 'Profil i domownicy', tab: 'more', screen: ProfileScreen },
+  { path: '/ustawienia/powiadomienia', title: 'Powiadomienia', tab: 'more', screen: NotificationsScreen },
   { path: '/ustawienia', title: 'Ustawienia', tab: 'more', screen: SettingsScreen },
   { path: '/ustawienia/instalacja', title: 'Instalacja na iPhonie', tab: 'more', screen: InstallScreen },
   { path: '/ustawienia/haslo', title: 'Zmiana hasła', tab: 'more', screen: ChangePasswordScreen },
