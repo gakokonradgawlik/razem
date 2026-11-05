@@ -171,3 +171,11 @@ i [repozytorium/wersje](operations/repository.md). Dokumentacja produktu opisuje
 docelowe MVP; zrealizowany zakres i dowody: [quality/raz-1.md](quality/raz-1.md), [quality/raz-2.md](quality/raz-2.md), [quality/raz-3.md](quality/raz-3.md), [quality/raz-5.md](quality/raz-5.md).
 PWA: [quality/raz-6.md](quality/raz-6.md). W repo nie ma kont demo, haseł domyślnych,
 kluczy ani danych domowników.
+
+## Notatki (RAZ-10)
+
+Notatki są domyślnie prywatne, działają lokalnie offline, mają wyszukiwanie
+w tytule/treści, kosz i przywracanie. Udostępnienie wymaga potwierdzenia i tworzy
+niezależną wspólną kopię; oryginał pozostaje prywatny. Konflikt pozwala połączyć
+tekst ręcznie, a błędy zapisu zachowują formularz. Szczegóły i granice:
+[architecture/notes.md](architecture/notes.md), dowody: [quality/raz-10.md](quality/raz-10.md).
