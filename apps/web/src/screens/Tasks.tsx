@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DEFAULT_TIMEZONE, defaultVisibility, localTimeToInstant } from '@razem/contracts';
+import { taskDataSchema, nextTaskOccurrence, taskOccurrence, taskOverdue, rescheduleTask, DEFAULT_TIMEZONE, defaultVisibility, localTimeToInstant } from '@razem/contracts';
 import { AddButton, Button, DateField, EmptyState, List, ListRow, Notice, PrivacyPicker, PrivacyTag, ScreenHeader, Section, Segmented, SelectField, TextArea, TextField } from '../ui/components.js';
 import { FormScreen, useFormValues } from '../ui/form.js';
 import type { Errors } from '../ui/form.js';
@@ -35,21 +35,34 @@ function dueLabel(task: Task): string | undefined {
   return task.data.dueDate ? formatIsoDate(task.data.dueDate) : undefined;
 }
 function isOverdue(task: Task, now = new Date()): boolean {
-  if (task.data.completedAt) return false;
-  if (task.data.dueAt) return new Date(task.data.dueAt) < now;
-  return task.data.dueDate !== null && task.data.dueDate < isoDate(todayIn());
+  return taskOverdue(task.data, now.toISOString());
+}
+function projected(task: Task, occurrences: Typed<'task_occurrence'>[], done = false): Task | null {
+  if (!task.data.recurrence) return task;
+  const completed = occurrences.filter((o) => o.data.taskId === task.id && o.data.completedAt);
+  if (done) {
+    const last = completed.sort((a, b) => b.data.occurrenceKey.localeCompare(a.data.occurrenceKey))[0];
+    if (last) return { ...task, data: { ...task.data, ...(taskOccurrence(task.data, last.data.occurrenceKey) ?? { dueDate: last.data.occurrenceKey, dueAt: null }), completedAt: last.data.completedAt } };
+    return task.data.recurrence.until && !nextTaskOccurrence(task.data, new Set())
+      ? { ...task, data: { ...task.data, dueDate: null, dueAt: null } } : null;
+  }
+  const next = nextTaskOccurrence(task.data, new Set(completed.map((o) => o.data.occurrenceKey)));
+  return next ? { ...task, data: { ...task.data, ...next, completedAt: null } } : null;
 }
 const matches: Record<Filter, (task: Task) => boolean> = {
   mine: (task) => !task.data.completedAt && assignedToMe(task),
   shared: (task) => !task.data.completedAt && task.visibility === 'shared',
   overdue: (task) => isOverdue(task),
-  done: (task) => task.data.completedAt !== null,
+  done: (task) => task.data.completedAt !== null || !!task.data.recurrence?.until,
 };
 
 export function TasksScreen() {
   const [filter, setFilter] = useState<Filter>('mine');
   const [state] = useRecords('task');
-  const tasks = loaded(state)?.filter(matches[filter]);
+  const [occurrences] = useRecords('task_occurrence');
+  const rows = loaded(occurrences);
+  const tasks = rows && loaded(state)?.map((task) => projected(task, rows, filter === 'done')).filter((task) => task !== null).filter(matches[filter])
+    .sort((a, b) => (a.data.dueAt ?? a.data.dueDate ?? '9999').localeCompare(b.data.dueAt ?? b.data.dueDate ?? '9999') || a.id.localeCompare(b.id));
   return (
     <>
       <ScreenHeader title="Zadania" action={<AddButton label="Nowe zadanie" to="/zadania/nowe" />} />
@@ -59,8 +72,8 @@ export function TasksScreen() {
           : tasks.length === 0 ? <EmptyState icon="tasks" {...emptyCopy[filter]} action={{ label: 'Dodaj zadanie', to: '/zadania/nowe' }} />
             : <List label="Zadania">
               {tasks.map((task) => (
-                <ListRow key={task.id} to={pathFor(taskPaths.detail, { taskId: task.id })} icon={task.data.completedAt ? 'check' : 'tasks'} iconTone={isOverdue(task) ? 'red' : 'blue'}
-                  title={task.data.title} detail={[dueLabel(task), assigneeLabel(task)].filter(Boolean).join(' · ')} value={<PrivacyTag value={task.visibility} />} />
+                <ListRow key={task.id} to={pathFor(taskPaths.detail, { taskId: task.id })} icon={filter === 'done' ? 'check' : 'tasks'} iconTone={isOverdue(task) ? 'red' : 'blue'}
+                  title={task.data.title} detail={[dueLabel(task), filter === 'done' && !task.data.completedAt ? 'Harmonogram zakończony' : null, assigneeLabel(task)].filter(Boolean).join(' · ')} value={<PrivacyTag value={task.visibility} />} />
               ))}
             </List>}
       </Section>
@@ -79,16 +92,31 @@ export function TaskDetailScreen() {
 }
 
 function TaskDetail({ task, reload }: { task: Task; reload: () => void }) {
-  const { updateRecord } = useServices();
+  const { updateRecord, setTaskOccurrence } = useServices();
   const [failure, setFailure] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [undo, setUndo] = useState<string | null>(null);
+  const [occurrences, reloadOccurrences] = useRecords('task_occurrence', task.id);
+  const rows = loaded(occurrences);
+  const current = rows ? projected(task, rows) : null;
+  const shown = current ?? task;
+  const next = task.data.recurrence && rows ? nextTaskOccurrence(task.data, new Set(rows.filter((o) => o.data.completedAt).map((o) => o.data.occurrenceKey))) : null;
   const done = task.data.completedAt !== null;
-  // Completing a one-off task is written at once; recurring tasks complete single
-  // occurrences (task_occurrence), which the tasks module adds together with the store.
+  const completeOccurrence = async (key: string, completed: boolean) => {
+    if (busy || !setTaskOccurrence) return;
+    setBusy(true); setFailure(null);
+    try {
+      const result = await setTaskOccurrence(task.id, key, completed);
+      if (result.ok) { setUndo(completed ? key : null); reloadOccurrences(); } else setFailure(failureMessage(result));
+    } catch { setFailure('Nie zapisano. Spróbuj ponownie.'); } finally { setBusy(false); }
+  };
   const toggle = async () => {
-    setFailure(null);
-    const result = await updateRecord({ entityType: 'task', id: task.id, baseVersion: task.version, patch: { completedAt: done ? null : new Date().toISOString() } })
-      .catch(() => ({ ok: false as const, reason: 'storage_unavailable' as const }));
-    if (result.ok) reload(); else setFailure(failureMessage(result));
+    if (busy) return;
+    setBusy(true); setFailure(null);
+    try {
+      const result = await updateRecord({ entityType: 'task', id: task.id, baseVersion: task.version, patch: { completedAt: done ? null : new Date().toISOString() } });
+      if (result.ok) reload(); else setFailure(failureMessage(result));
+    } catch { setFailure('Nie zapisano. Spróbuj ponownie.'); } finally { setBusy(false); }
   };
   return (
     <>
@@ -98,18 +126,25 @@ function TaskDetail({ task, reload }: { task: Task; reload: () => void }) {
         <DetailFields rows={[
           { label: 'Widoczność', value: <PrivacyTag value={task.visibility} /> },
           { label: 'Kto to zrobi?', value: assigneeLabel(task) },
-          { label: 'Termin', value: dueLabel(task) ?? 'Bez terminu' },
+          { label: 'Termin', value: task.data.recurrence && rows && !current ? 'Harmonogram zakończony' : dueLabel(shown) ?? 'Bez terminu' },
           ...(task.data.recurrence ? [{ label: 'Powtarzaj', value: repeatLabel[task.data.recurrence.frequency] }] : []),
-          { label: 'Stan', value: done ? 'Ukończone' : isOverdue(task) ? 'Zaległe' : 'Do zrobienia' },
+          { label: 'Stan', value: task.data.recurrence && rows && !current ? 'Harmonogram zakończony' : done ? 'Ukończone' : isOverdue(shown) ? 'Zaległe' : 'Do zrobienia' },
           ...(task.data.description ? [{ label: 'Opis', value: <span className="prewrap">{task.data.description}</span> }] : []),
         ]} />
       </Section>
       <Section>
         {failure && <Notice tone="danger" role="alert">{failure}</Notice>}
         {task.data.recurrence
-          ? <p className="section__footer">Odhaczanie pojedynczych terminów powtarzanego zadania nie jest jeszcze dostępne w tej wersji aplikacji.</p>
-          : <Button variant={done ? 'tinted' : 'filled'} className={`button button--${done ? 'tinted' : 'filled'} button--block`} onClick={toggle}>{done ? 'Przywróć do zrobienia' : 'Oznacz jako ukończone'}</Button>}
+          ? <>
+            {!rows ? <LoadingNotice /> : next && <Button variant="filled" disabled={busy || !setTaskOccurrence} onClick={() => completeOccurrence(next.occurrenceKey, true)}>Ukończ termin {next.occurrenceKey}</Button>}
+            {undo && <Notice>Termin {undo} ukończony. <Button variant="plain" disabled={busy} onClick={() => completeOccurrence(undo, false)}>Cofnij</Button></Notice>}
+          </>
+          : <Button variant={done ? 'tinted' : 'filled'} className={`button button--${done ? 'tinted' : 'filled'} button--block`} disabled={busy} onClick={toggle}>{done ? 'Przywróć do zrobienia' : 'Oznacz jako ukończone'}</Button>}
       </Section>
+      {!!rows?.some((o) => o.data.completedAt) && <Section title="Ukończone terminy">
+        {rows.filter((o) => o.data.completedAt).sort((a, b) => b.data.occurrenceKey.localeCompare(a.data.occurrenceKey)).map((o) =>
+          <p key={o.id}>{formatIsoDate(o.data.occurrenceKey)} <Button variant="plain" disabled={busy} onClick={() => completeOccurrence(o.data.occurrenceKey, false)}>Przywróć termin {o.data.occurrenceKey}</Button></p>)}
+      </Section>}
       <Section><DeleteRecord entityType="task" record={task} what="zadanie" doneTo="/zadania" /></Section>
     </>
   );
@@ -135,7 +170,7 @@ function initialTask(mode: FormMode<'task'>): TaskForm {
   const local = data.dueAt ? instantToLocal(data.dueAt, data.timezone) : null;
   return {
     title: data.title, description: data.description, visibility, assignee: assigneeForViewer(data.assignee, mine),
-    dueDate: local?.date ?? data.dueDate ?? '', dueTime: local?.time ?? '', repeat: data.recurrence?.frequency ?? 'none',
+    dueDate: local?.date ?? data.dueDate ?? '', dueTime: data.recurrence?.time ?? local?.time ?? '', repeat: data.recurrence?.until ? 'none' : data.recurrence?.frequency ?? 'none',
   };
 }
 
@@ -148,10 +183,12 @@ function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
   const changeVisibility = (visibility: Visibility) =>
     setValues((current) => ({ ...current, visibility, assignee: visibility === 'private' ? 'me' : current.assignee }));
 
+  const initial = initialTask(mode);
+  const scheduleChanged = values.dueDate !== initial.dueDate || values.dueTime !== initial.dueTime || values.repeat !== initial.repeat;
   const validate = (): Errors<TaskForm> => ({
     title: requiredText(values.title, 'tytuł zadania'),
     description: maxText(values.description, 50_000),
-    dueDate: values.dueTime && !values.dueDate ? 'Godzina wymaga dnia.' : values.repeat !== 'none' && !values.dueDate ? 'Powtarzanie wymaga terminu.' : undefined,
+    dueDate: editing?.data.recurrence && scheduleChanged && values.dueDate <= isoDate(todayIn(editing.data.timezone)) ? 'Wybierz przyszły dzień zmiany harmonogramu.' : values.dueTime && !values.dueDate ? 'Godzina wymaga dnia.' : values.repeat !== 'none' && !values.dueDate ? 'Powtarzanie wymaga terminu.' : undefined,
     assignee: values.visibility === 'private' && values.assignee !== 'me' ? 'Prywatne zadanie można przypisać tylko sobie.' : undefined,
   });
   const submit = () => {
@@ -163,10 +200,14 @@ function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
     const interval = previous && previous.frequency === values.repeat ? previous.interval : 1;
     const data = contractData('task', {
       title: values.title.trim(), description: values.description, assignee: assigneeForRecord(values.assignee, editing?.mine ?? true),
-      dueDate: dueAt ? null : startDate, dueAt, timezone, completedAt: editing?.data.completedAt ?? null,
-      recurrence: values.repeat === 'none' || !startDate ? null : { frequency: values.repeat, interval, startDate },
+      dueDate: dueAt ? null : startDate, dueAt, timezone, completedAt: values.repeat !== 'none' ? null : editing?.data.completedAt ?? null,
+      recurrence: editing?.data.recurrence ?? (values.repeat === 'none' || !startDate ? null : { frequency: values.repeat, interval, startDate, time: values.dueTime || null }),
     });
-    return persist(services, 'task', mode, data, values.visibility);
+    const scheduled = editing?.data.recurrence
+      ? scheduleChanged ? rescheduleTask({ ...taskDataSchema.parse(data), dueDate: editing.data.dueDate, dueAt: editing.data.dueAt, timezone: editing.data.timezone }, values.dueDate, values.repeat === 'none' ? null : values.repeat, values.dueTime || null, timezone)
+        : { ...data, dueDate: editing.data.dueDate, dueAt: editing.data.dueAt }
+      : data;
+    return persist(services, 'task', mode, scheduled, values.visibility);
   };
 
   return (
@@ -183,7 +224,7 @@ function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
       </div>
       <div className="group">
         <div className="field-row">
-          <DateField label="Termin – dzień" value={values.dueDate} onValue={set('dueDate')} error={errors.dueDate} />
+          <DateField label={editing?.data.recurrence ? "Nowy harmonogram od" : "Termin – dzień"} hint={editing?.data.recurrence ? "Przy zmianie wybierz przyszły dzień. Wcześniejsze terminy i ukończenia pozostaną." : undefined} value={values.dueDate} onValue={set('dueDate')} error={errors.dueDate} />
           <DateField label="Godzina (opcjonalnie)" type="time" value={values.dueTime} onValue={set('dueTime')} />
         </div>
         <SelectField<Repeat> label="Powtarzaj" value={values.repeat} onValue={set('repeat')}

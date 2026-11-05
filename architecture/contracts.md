@@ -1,4 +1,14 @@
-# Wspólne kontrakty v1 — RAZ-1
+# Wspólne kontrakty — v1 i rozszerzenie sync v2 (RAZ-8)
+
+Aktualny sync używa `PROTOCOL_VERSION=2`. RAZ-8 rozszerza `recurrence` o opcjonalne
+`time/history/until`; stary strict klient otrzymuje `upgrade_required` przed zapisem
+lub odczytem danych. Pull wymaga `x-razem-protocol: 2`, push ma wersję w kopercie.
+Mutacje, cursor, pending i schemat Dexie pozostają; aktualizacja przez zamknięcie
+wszystkich okien PWA i ponowne otwarcie. Health ma osobny kontrakt v1.
+Szczegóły reguł, migracji SQLite v4 i zdarzeń: [tasks.md](tasks.md).
+Poniższy opis v1 pozostaje podstawą struktury; powyższe rozszerzenie ma pierwszeństwo.
+
+## Fundament kontraktu v1 — RAZ-1
 
 Źródło wykonawcze: `packages/contracts/src/`. `index.ts` eksportuje publiczne
 modele, Zod/typy, wspólne reguły czasu i opis protokołu sync. Zmiana wymaga

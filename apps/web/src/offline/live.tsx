@@ -66,6 +66,7 @@ export function servicesFor(controller: AppController, snapshot: Snapshot): AppS
     saveRecord: async ({ entityType, visibility, data }) => done(await command((s) => s.create(entityType, data, visibility))),
     updateRecord: async ({ entityType, id, patch }) => done(await command((s) => s.update(entityType, id, patch))),
     deleteRecord: async ({ entityType, id }) => done(await command((s) => s.remove(entityType, id))),
+    setTaskOccurrence: async (taskId, key, completed) => done(await command((s) => s.setTaskOccurrence(taskId, key, completed))),
     restoreRecord: async (entityType, id) => done(await command((s) => s.restore(entityType, id))),
     listRecords: async ({ entityType, parentId }) => {
       const s = store();

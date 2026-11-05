@@ -7,7 +7,19 @@ konflikty, kosz/tombstones, retencja). RAZ-3: interfejs w stylu iOS i szkielet w
 ekranów — listy, szczegóły, edycja, zawartość list zakupów. RAZ-5: prawdziwe logowanie,
 lokalna baza IndexedDB per konto (Dexie), kolejka zmian, synchronizacja aktywnej aplikacji,
 konflikty, eksport niewysłanych zmian i wylogowanie. RAZ-6: instalacja PWA, lokalny shell
-offline i aktualizacje po zamknięciu wszystkich okien aplikacji. Przypomnienia mają kolejne zadanie.
+offline i aktualizacje po zamknięciu wszystkich okien aplikacji. RAZ-8: zadania i przypisania, filtry oraz powtarzalne obowiązki z historią i ukończeniami
+poszczególnych terminów. Przypomnienia mają kolejne zadanie.
+
+Zadania działają lokalnie i synchronizują się z drugim kontem. Wspólne zadania można
+przypisać sobie, drugiej osobie lub obojgu; prywatne tylko sobie. Zadanie cykliczne
+pokazuje najstarszy nieukończony termin. Szczegóły zawierają historię i przyciski
+cofnięcia ukończeń. Zmianę reguły/godziny wprowadza się od przyszłego dnia,
+bez usuwania wcześniejszych zaległości. Zobacz [architecture/tasks.md](architecture/tasks.md) i dowody [quality/raz-8.md](quality/raz-8.md).
+
+Po aktualizacji z wersji sprzed RAZ-8 stara PWA pokaże potrzebę aktualizacji sync:
+zapisz formularze, zamknij wszystkie okna Razem i otwórz ponownie. Oczekujące zmiany
+pozostają. Sync używa v2, health v1; migracja SQLite v4 dodaje wyłącznie zdarzenia
+zadań dla przyszłego workera. Nie uruchamia wysyłania powiadomień.
 
 ## Instalacja PWA i offline
 

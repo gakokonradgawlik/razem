@@ -35,9 +35,9 @@ describe('granice kontraktu mutacji', () => {
     expect(mutationSchema.safeParse({ clientMutationId: id, entityId: id, entityType: 'shopping_item', command: 'update', baseVersion: 1, patch: { listId: partner } }).success).toBe(false);
   });
   it('ogranicza partie i odrzuca powtórzone identyfikatory', () => {
-    expect(pushRequestSchema.safeParse({ protocolVersion: 1, deviceId: id, mutations: [create] }).success).toBe(true);
+    expect(pushRequestSchema.safeParse({ protocolVersion: 2, deviceId: id, mutations: [create] }).success).toBe(true);
     for (const mutations of [[], [create, create], Array(101).fill(create)]) {
-      expect(pushRequestSchema.safeParse({ protocolVersion: 1, deviceId: id, mutations }).success).toBe(false);
+      expect(pushRequestSchema.safeParse({ protocolVersion: 2, deviceId: id, mutations }).success).toBe(false);
     }
   });
 });
@@ -71,7 +71,7 @@ describe('prywatność i odpowiedzi sync', () => {
   it('ACK i conflict zawierają kanoniczną wersję; pull obsługuje tombstone i resync', () => {
     const state = { kind: 'record', record: note };
     for (const status of ['ack', 'conflict']) expect(mutationResultSchema.safeParse({ clientMutationId: id, entityId: id, entityType: 'note', status, state }).success).toBe(true);
-    const page = { status: 'ok', protocolVersion: 1, mode: 'snapshot', watermark: 'opaque-watermark', changes: [state, { kind: 'tombstone', tombstone: { entityType: 'note', id: partner, version: 2, deletedAt: now } }], nextCursor: 'opaque-user-bound-cursor', hasMore: true };
+    const page = { status: 'ok', protocolVersion: 2, mode: 'snapshot', watermark: 'opaque-watermark', changes: [state, { kind: 'tombstone', tombstone: { entityType: 'note', id: partner, version: 2, deletedAt: now } }], nextCursor: 'opaque-user-bound-cursor', hasMore: true };
     expect(pullResponseSchema.safeParse(page).success).toBe(true);
     expect(pullResponseSchema.safeParse({ ...page, nextCursor: '' }).success).toBe(false);
     expect(pullResponseSchema.safeParse({ ...page, changes: Array(201).fill(state) }).success).toBe(false);

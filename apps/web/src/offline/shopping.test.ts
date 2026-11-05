@@ -100,8 +100,8 @@ it('zakupy: prywatna lista i dzieci nie wyciekają; guessed ID i podmiana listId
   expect(await b.store!.get(secret)).toBeUndefined(); expect(await b.store!.get(privateList)).toBeUndefined();
   const rawPush = async (mutations: Record<string, unknown>[]) => {
     const response = await server.app.inject({ method: 'POST', url: '/api/sync/push',
-      headers: { origin: ORIGIN, 'content-type': 'application/json', cookie: pb.network.cookie!, 'x-razem-account': ACCOUNTS.b.id },
-      payload: { protocolVersion: 1, deviceId: crypto.randomUUID(), mutations } });
+      headers: { origin: ORIGIN, 'content-type': 'application/json', cookie: pb.network.cookie!, 'x-razem-protocol': '2', 'x-razem-account': ACCOUNTS.b.id },
+      payload: { protocolVersion: 2, deviceId: crypto.randomUUID(), mutations } });
     expect(response.statusCode).toBe(200); return response.json();
   };
   for (const entityId of [secret, crypto.randomUUID()]) {

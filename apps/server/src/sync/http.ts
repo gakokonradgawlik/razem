@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { MAX_PUSH_BYTES, SYNC_ACCOUNT_HEADER, apiErrorSchema } from '@razem/contracts';
+import { MAX_PUSH_BYTES, SYNC_ACCOUNT_HEADER, SYNC_PROTOCOL_HEADER, PROTOCOL_VERSION, apiErrorSchema } from '@razem/contracts';
 import type { SyncOutcome, SyncService } from './service.js';
 
 /**
@@ -26,5 +26,6 @@ export function registerSync(app: FastifyInstance, sync: SyncService) {
   app.post('/api/sync/push', { bodyLimit: MAX_PUSH_BYTES }, async (request, reply) =>
     boundTo(request) ? send(sync.push(scopeOf(request), request.body), reply) : mismatch(reply));
   app.get('/api/sync/pull', async (request, reply) =>
-    boundTo(request) ? send(sync.pull(scopeOf(request), request.query), reply) : mismatch(reply));
+    !boundTo(request) ? mismatch(reply) : request.headers[SYNC_PROTOCOL_HEADER] !== String(PROTOCOL_VERSION)
+      ? reply.code(400).send(apiErrorSchema.parse({ error: 'upgrade_required' })) : send(sync.pull(scopeOf(request), request.query), reply));
 }

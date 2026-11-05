@@ -122,3 +122,25 @@ describe('serwis uprawnień: konta A/B', () => {
     expect(repo.journalSince(A, 0).map((c) => c.version)).toEqual([1, 2, 3, 4]);
   });
 });
+
+it('zdarzenia przypisań/terminów/ukończeń są atomowe i bez treści; odrzucone zmiany niczego nie emitują', () => {
+  const data = { title: 'Tytuł prywatny', description: 'Opis prywatny', assignee: 'self', dueDate: '2026-11-05', dueAt: null, timezone: 'Europe/Warsaw', completedAt: null, recurrence: null };
+  const id = uuid();
+  const created = ack(repo.create(A, { entityType: 'task', id, visibility: 'private', data }));
+  expect(repo.update(A, { entityType: 'task', id, baseVersion: created.version, patch: { assignee: 'partner' } })).toEqual(INVALID);
+  const events = () => database.sqlite.prepare('SELECT * FROM task_events ORDER BY sequence').all();
+  expect(events()).toHaveLength(2);
+  expect(JSON.stringify(events())).not.toContain('Tytuł prywatny');
+  expect(JSON.stringify(events())).not.toContain('Opis prywatny');
+  ack(repo.update(A, { entityType: 'task', id, baseVersion: 1, patch: { completedAt: T } }));
+  expect(repo.update(A, { entityType: 'task', id, baseVersion: 1, patch: { completedAt: '2026-11-04T10:00:01Z' } }).status).toBe('ack');
+  expect(events()).toHaveLength(3);
+  expect(repo.update(A, { entityType: 'task', id, baseVersion: 1, patch: { title: 'Stara edycja' } }).status).toBe('conflict');
+  expect(events()).toHaveLength(3);
+  database.sqlite.exec("CREATE TRIGGER fail_task_event BEFORE INSERT ON task_events BEGIN SELECT RAISE(ABORT, 'test_failure'); END;");
+  const before = repo.maxSequence();
+  expect(() => repo.update(A, { entityType: 'task', id, baseVersion: 2, patch: { completedAt: null } })).toThrow(/test_failure/);
+  expect(repo.get(A, 'task', id)).toMatchObject({ version: 2, data: { completedAt: T } });
+  expect(repo.maxSequence()).toBe(before);
+  expect(events()).toHaveLength(3);
+});

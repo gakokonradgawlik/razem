@@ -127,7 +127,7 @@ test('zakupy offline → restart procesu → sync → partner; kosz, polskie ilo
       await expect(b.getByText(secret, { exact: true })).toHaveCount(0);
     }
     const me = await (await partner.request.get('/api/me')).json();
-    const headers = { origin: ORIGIN, 'x-razem-account': me.user.id };
+    const headers = { origin: ORIGIN, 'x-razem-protocol': '2', 'x-razem-account': me.user.id };
     let cursor: string | undefined;
     do {
       const response = await partner.request.get(`/api/sync/pull${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { headers });
@@ -137,7 +137,7 @@ test('zakupy offline → restart procesu → sync → partner; kosz, polskie ilo
     } while (cursor);
     for (const command of ['update', 'delete', 'restore']) {
       const response = await partner.request.post('/api/sync/push', { headers, data: {
-        protocolVersion: 1, deviceId: crypto.randomUUID(), mutations: [{ clientMutationId: crypto.randomUUID(), entityType: 'shopping_item',
+        protocolVersion: 2, deviceId: crypto.randomUUID(), mutations: [{ clientMutationId: crypto.randomUUID(), entityType: 'shopping_item',
           entityId: privateItem.split('/').at(-1), command, baseVersion: 1, ...(command === 'update' ? { patch: { checked: true } } : {}) }],
       } });
       expect(response.ok()).toBe(true);

@@ -1,7 +1,7 @@
 // HTTP client of the PWA. Every request has a time limit; the caller decides what a
 // failure means. A response is never interpreted as success unless it parses with the
 // shared contract. The fetcher is injectable so tests talk to the real Fastify app.
-import { SYNC_ACCOUNT_HEADER, apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema } from '@razem/contracts';
+import { PROTOCOL_VERSION, SYNC_PROTOCOL_HEADER, SYNC_ACCOUNT_HEADER, apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema } from '@razem/contracts';
 import type { MeResponse, PullResponse, PushRequest, PushResponse } from '@razem/contracts';
 
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
@@ -78,10 +78,10 @@ export class Api {
    */
   async push(input: PushRequest, account: string, abort?: AbortSignal): Promise<PushResponse> {
     const payload = pushRequestSchema.parse(input);
-    return this.parse(pushResponseSchema, await this.request('/api/sync/push', { method: 'POST', body: JSON.stringify(payload), headers: { [SYNC_ACCOUNT_HEADER]: account } }, abort));
+    return this.parse(pushResponseSchema, await this.request('/api/sync/push', { method: 'POST', body: JSON.stringify(payload), headers: { [SYNC_ACCOUNT_HEADER]: account, [SYNC_PROTOCOL_HEADER]: String(PROTOCOL_VERSION) } }, abort));
   }
   async pull(cursor: string | undefined, limit: number, account: string, abort?: AbortSignal): Promise<PullResponse> {
     const query = new URLSearchParams({ limit: String(limit), ...(cursor ? { cursor } : {}) });
-    return this.parse(pullResponseSchema, await this.request(`/api/sync/pull?${query}`, { headers: { [SYNC_ACCOUNT_HEADER]: account } }, abort));
+    return this.parse(pullResponseSchema, await this.request(`/api/sync/pull?${query}`, { headers: { [SYNC_ACCOUNT_HEADER]: account, [SYNC_PROTOCOL_HEADER]: String(PROTOCOL_VERSION) } }, abort));
   }
 }

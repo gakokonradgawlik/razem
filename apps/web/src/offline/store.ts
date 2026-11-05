@@ -6,7 +6,7 @@
 // - a pulled server version never overwrites a record with local changes (dirty):
 //   it only becomes the new base, so the queued intent meets the server version check;
 // - conflicts keep the local intent, its base and the server state until the user decides.
-import { canReadRecord, IMMUTABLE_PARENT_FIELDS, mutationSchema, recordSchemaUnion } from '@razem/contracts';
+import { taskOccurrence, taskOccurrenceId, taskDataSchema, validTaskScheduleChange, canReadRecord, IMMUTABLE_PARENT_FIELDS, mutationSchema, recordSchemaUnion } from '@razem/contracts';
 import type { AccountScope, EntityType, Mutation, PullResponse, PushResponse, SyncRecord } from '@razem/contracts';
 import { LocalDatabase, parentOf } from '../local-db.js';
 import type { Command, ConflictEntry, LocalRecord, QueueEntry, ServerState, Visibility } from '../local-db.js';
@@ -132,9 +132,9 @@ export class LocalStore {
   // ---------- Queries ----------
 
   private async shoppingParentActive(record: LocalRecord): Promise<boolean> {
-    if (record.entityType !== 'shopping_item') return true;
+    if (record.entityType !== 'shopping_item' && record.entityType !== 'task_occurrence') return true;
     const parent = record.parentId ? await this.db.records.get(record.parentId) : undefined;
-    return !!parent && parent.entityType === 'shopping_list' && parent.deletedAt === null && canReadRecord(this.scope, parent);
+    return !!parent && parent.entityType === (record.entityType === 'task_occurrence' ? 'task' : 'shopping_list') && parent.deletedAt === null && canReadRecord(this.scope, parent);
   }
 
   async list(entityType: EntityType, parentId?: string): Promise<LocalRecord[]> {
@@ -164,8 +164,11 @@ export class LocalStore {
   // ---------- Commands ----------
 
   async create(entityType: EntityType, data: Record<string, unknown>, visibility?: Visibility): Promise<StoreResult<string>> {
+    return this.createWithId(entityType, crypto.randomUUID(), data, visibility);
+  }
+
+  private async createWithId(entityType: EntityType, id: string, data: Record<string, unknown>, visibility?: Visibility): Promise<StoreResult<string>> {
     return this.guarded(async () => {
-      const id = crypto.randomUUID();
       const parentId = parentOf(entityType, data);
       let owner = this.scope.userId;
       let scopeVisibility: Visibility = visibility ?? 'shared';
@@ -173,6 +176,7 @@ export class LocalStore {
         const parent = parentId ? await this.db.records.get(parentId) : undefined;
         if (!parent || parent.deletedAt !== null || !canReadRecord(this.scope, parent)) throw new Abort('not_found');
         if (entityType === 'shopping_item' && parent.entityType !== 'shopping_list') throw new Abort('not_found');
+        if (entityType === 'task_occurrence' && (parent.entityType !== 'task' || !taskOccurrence(taskDataSchema.parse(parent.data), String(data.occurrenceKey)))) throw new Abort('invalid');
         scopeVisibility = parent.visibility;
         if (parent.visibility === 'private') owner = parent.ownerId;
       } else if (!visibility) throw new Abort('invalid');
@@ -195,9 +199,27 @@ export class LocalStore {
       if (Object.keys(changed).length === 0) return { ok: true, value: undefined };
       if (Object.keys(changed).some((key) => ['listId', 'taskId', 'occurrenceKey', 'targetType', 'targetId'].includes(key))) throw new Abort('invalid');
       if (!validData(entityType, merged, record.visibility)) throw new Abort('invalid');
+      if (entityType === 'task' && !validTaskScheduleChange(taskDataSchema.parse(record.data), taskDataSchema.parse(merged))) throw new Abort('invalid');
       const base = await this.baseFor(record);
       await this.db.records.put({ ...record, data: merged, updatedAt: new Date().toISOString() });
       await this.enqueue({ entityType, entityId: id, parentId: record.parentId, command: 'update', patch: changed }, base);
+      return { ok: true, value: undefined };
+    });
+  }
+
+  /** Complete/reopen one nominal date in the same local transaction as its outbox entry. */
+  async setTaskOccurrence(taskId: string, key: string, completed: boolean): Promise<StoreResult> {
+    const id = await taskOccurrenceId(taskId, key);
+    return this.guarded(async () => {
+      const parent = await this.editable('task', taskId);
+      const existing = (await this.db.records.where('parentId').equals(taskId).toArray())
+        .find((r) => r.entityType === 'task_occurrence' && r.data.occurrenceKey === key && r.deletedAt === null);
+      if (!existing && !taskOccurrence(taskDataSchema.parse(parent.data), key)) throw new Abort('invalid');
+      if (!!existing?.data.completedAt === completed) return { ok: true, value: undefined };
+      const completedAt = completed ? new Date().toISOString() : null;
+      const result = existing ? await this.update('task_occurrence', existing.id, { completedAt })
+        : await this.createWithId('task_occurrence', id, { taskId, occurrenceKey: key, completedAt });
+      if (!result.ok) throw new Abort(result.reason);
       return { ok: true, value: undefined };
     });
   }

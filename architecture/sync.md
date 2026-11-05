@@ -1,5 +1,21 @@
 <!-- razem/architecture/sync.md · updated 2026-11-05 by Codex (RAZ-6) -->
 # Razem — kontrakt offline i synchronizacji
+
+## Rozszerzenie RAZ-8: sync v2 i zadania
+
+Bieżąca koperta push/odpowiedź pull ma `protocolVersion: 2`. Push v1 oraz pull bez
+`x-razem-protocol: 2` zwracają `400 upgrade_required` przed operacjami na danych.
+Nagłówek `x-razem-account` nadal jest wymagany i sprawdzany wobec sesji.
+Powód: historia reguł zadań jest nieczytelna dla starego strict schematu.
+Klient zachowuje lokalną bazę, mutacje i cursor; wymagane zamknięcie wszystkich okien
+PWA i ponowne otwarcie po dostępności spójnej aktualizacji. Health pozostaje v1.
+Dwa ukończenia tego samego zadania/wystąpienia mają semantykę jednego odhaczenia,
+także przy różnych niepustych timestampach. Cofnięcie kontra ukończenie pozostaje
+konfliktem. Wystąpienia nowego klienta mają stały UUID z taskId + nominalnej daty;
+nie powstają nowe szablony. Szczegóły: [tasks.md](tasks.md).
+Poniższe historyczne sekcje RAZ-4/5 opisują mechanizm bazowy; ten akapit uaktualnia
+wersję protokołu i semantykę porównania completedAt.
+
 ## Gwarancje i granice
 Pierwsze uruchomienie, utworzenie kont i pobranie danych wymaga internetu/serwera. Potem działa lokalna kopia i kolejka zmian. Zamknięta PWA na iOS nie jest niezawodnym wykonawcą synchronizacji w tle; zawsze synchronizuj na starcie, visibilitychange/focus i odzyskaniu realnego połączenia oraz co 15 s podczas aktywnego użycia. Retry exponential backoff z jitter, limit czasu żądań; przy 401 czekaj na ponowne logowanie.
 Push nie służy do cichej synchronizacji. Oczekujące dane mogą istnieć wyłącznie na telefonie; utrata magazynu przeglądarki może je usunąć. Poproś o persistent storage jeśli dostępne, ale nie obiecuj gwarancji. Zapewnij eksport oczekujących danych przy problemie.

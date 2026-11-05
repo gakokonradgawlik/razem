@@ -214,7 +214,7 @@ describe('logowanie i sesje', () => {
     expect((await get(app, '/api/me', temp)).statusCode).toBe(401);
     expect((await get(app, '/api/me', otherDevice)).statusCode).toBe(401);
     const ownId = meResponseSchema.parse((await get(app, '/api/me', own)).json()).user.id;
-    expect((await app.inject({ method: 'GET', url: '/api/sync/pull', headers: { cookie: own, 'x-razem-account': ownId } })).statusCode).toBe(200); // authenticated with own password (RAZ-4)
+    expect((await app.inject({ method: 'GET', url: '/api/sync/pull', headers: { cookie: own, 'x-razem-protocol': '2', 'x-razem-account': ownId } })).statusCode).toBe(200); // authenticated with own password (RAZ-4)
     expect((await login(app, 'a@example.test', TEMP_A)).statusCode).toBe(401);
     expect((await login(app, 'A@EXAMPLE.TEST', OWN_A)).statusCode).toBe(200);
   });

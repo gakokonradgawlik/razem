@@ -325,10 +325,29 @@ BEGIN SELECT RAISE(ABORT, 'floor_must_increase'); END;
 CREATE INDEX sync_changes_changed ON sync_changes(changed_at);
 `;
 
+// RAZ-8: server-only semantic events. No titles/descriptions or push payloads.
+const taskEventsSql = `
+CREATE TABLE task_events (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  entity_id TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK (version >= 1),
+  kind TEXT NOT NULL CHECK (kind IN ('task.created','task.assigned','task.schedule_changed','task.completed','task.reopened','task.deleted','task.restored')),
+  occurrence_key TEXT,
+  household_id TEXT NOT NULL REFERENCES households(id),
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  visibility TEXT NOT NULL CHECK (visibility IN ('private','shared')),
+  changed_at TEXT NOT NULL,
+  UNIQUE(entity_id, version, kind)
+) STRICT;
+CREATE INDEX task_events_sequence ON task_events(household_id, sequence);
+`;
+
 export const migrations: readonly Migration[] = [
   { version: 1, name: 'accounts_sessions', sql: accounts },
   { version: 2, name: 'domain_sync_push', sql: domain },
   { version: 3, name: 'sync_tombstones_state', sql: syncServer },
+  { version: 4, name: 'task_semantic_events', sql: taskEventsSql },
 ];
 export const LATEST_SCHEMA_VERSION = migrations.length;
 

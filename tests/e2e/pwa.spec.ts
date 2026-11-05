@@ -264,7 +264,7 @@ test('upgrade IndexedDB v1 z outbox: te same identyfikatory i treść, potem dok
     await expect(badge(again)).toContainText('Zsynchronizowano', { timeout: 20_000 });
     expect((await localState(again)).queue).toHaveLength(0);
     const me = await (await context.request.get('/api/me')).json();
-    const pull = await (await context.request.get('/api/sync/pull', { headers: { 'x-razem-account': me.user.id } })).json();
+    const pull = await (await context.request.get('/api/sync/pull', { headers: { 'x-razem-protocol': '2', 'x-razem-account': me.user.id } })).json();
     expect(pull.changes.filter((c: { record?: { data: { title?: string } } }) => c.record?.data.title === title)).toHaveLength(1);
   } finally { await context.close(); }
 });
