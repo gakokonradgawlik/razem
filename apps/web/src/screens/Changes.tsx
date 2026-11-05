@@ -3,6 +3,7 @@
 // keeps one, or merges field by field (text can be joined by hand). Nothing is lost:
 // a deleted-vs-edited record keeps my text until I decide.
 import { useState } from 'react';
+import { IMMUTABLE_PARENT_FIELDS } from '@razem/contracts';
 import type { EntityType } from '@razem/contracts';
 import { navigate, pathFor, useParam } from '../router.js';
 import { Button, EmptyState, List, ListRow, Notice, ScreenHeader, Section, TextArea } from '../ui/components.js';
@@ -24,7 +25,7 @@ const fieldLabel: Record<string, string> = {
   enabled: 'Włączone', minutesBefore: 'Minut przed', localTime: 'Godzina',
 };
 const TEXT_FIELDS = new Set(['name', 'title', 'body', 'description', 'note', 'quantity']);
-const HIDDEN_FIELDS = new Set(['listId', 'taskId', 'targetId', 'targetType', 'occurrenceKey']);
+const HIDDEN_FIELDS: ReadonlySet<string> = new Set(IMMUTABLE_PARENT_FIELDS);
 const errorLabel: Record<string, string> = {
   validation_error: 'Serwer nie przyjął tej zmiany (niepoprawne dane).',
   not_found: 'Wpis nie istnieje już na serwerze albo nie jest dostępny dla Twojego konta.',
@@ -118,12 +119,16 @@ function ConflictResolver({ conflict }: { conflict: ConflictView }) {
       setFailure(failureMessage(result));
     } catch { setFailure('Nie zapisano. Spróbuj ponownie.'); } finally { setBusy(false); }
   };
-  const merged = () => Object.fromEntries(fields.map((key) => {
-    const pick = picks[key];
-    if (pick === 'server') return [key, server[key]];
-    if (pick === 'joined') return [key, joined[key] ?? ''];
-    return [key, key in mine ? mine[key] : server[key]];
-  }));
+  // Hidden fields (parent references, keys) are not editable, but the merged record still needs them.
+  const merged = () => ({
+    ...Object.fromEntries([...HIDDEN_FIELDS].filter((key) => key in server || key in mine).map((key) => [key, key in server ? server[key] : mine[key]])),
+    ...Object.fromEntries(fields.map((key) => {
+      const pick = picks[key];
+      if (pick === 'server') return [key, server[key]];
+      if (pick === 'joined') return [key, joined[key] ?? ''];
+      return [key, key in mine ? mine[key] : server[key]];
+    })),
+  });
 
   const situation = conflict.serverState === 'gone'
     ? 'Na innym urządzeniu wpis został trwale usunięty. Twoją wersję możesz zapisać jako nowy wpis.'

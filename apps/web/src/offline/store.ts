@@ -6,7 +6,7 @@
 // - a pulled server version never overwrites a record with local changes (dirty):
 //   it only becomes the new base, so the queued intent meets the server version check;
 // - conflicts keep the local intent, its base and the server state until the user decides.
-import { canReadRecord, mutationSchema, recordSchemaUnion } from '@razem/contracts';
+import { canReadRecord, IMMUTABLE_PARENT_FIELDS, mutationSchema, recordSchemaUnion } from '@razem/contracts';
 import type { AccountScope, EntityType, Mutation, PullResponse, PushResponse, SyncRecord } from '@razem/contracts';
 import { LocalDatabase, parentOf } from '../local-db.js';
 import type { Command, ConflictEntry, LocalRecord, QueueEntry, ServerState, Visibility } from '../local-db.js';
@@ -478,7 +478,12 @@ export class LocalStore {
         await this.adopt(server);
         return { ok: true, value: undefined };
       }
-      const wanted = resolution.choice === 'merge' ? resolution.data : local.data;
+      // A merge only chooses content: parent references/keys are fixed at creation, so they always
+      // come from the record itself, whatever the screen sent (or left out).
+      const fixedFrom = server.kind === 'record' ? { ...local.data, ...server.record.data } : local.data;
+      const wanted = resolution.choice === 'merge'
+        ? { ...resolution.data, ...Object.fromEntries(IMMUTABLE_PARENT_FIELDS.filter((key) => key in fixedFrom).map((key) => [key, fixedFrom[key]])) }
+        : local.data;
       const localDeleted = local.deletedAt !== null;
       if (!localDeleted && !validData(entityType, wanted, local.visibility)) throw new Abort('invalid');
       const now = new Date().toISOString();

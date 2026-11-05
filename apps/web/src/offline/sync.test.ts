@@ -187,6 +187,27 @@ describe('konflikty', () => {
     expect(b.getSnapshot()).toMatchObject({ unsent: 0, attention: 0 });
   });
 
+  it('scalenie pozycji zakupów z obcym listId: warstwa bierze niezmienne powiązanie z rekordu', async () => {
+    const phoneA = new Phone(server), phoneB = new Phone(server);
+    const a = await signedIn(phoneA, 'a'), b = await signedIn(phoneB, 'b');
+    const list = ok(await a.command((s) => s.create('shopping_list', { name: 'Dom' }, 'shared')));
+    const other = ok(await a.command((s) => s.create('shopping_list', { name: 'Inna' }, 'shared')));
+    const id = ok(await a.command((s) => s.create('shopping_item', { listId: list, name: 'Mleko', quantity: '', note: '', checked: false, sortKey: 1 })));
+    await a.syncNow(); await b.syncNow();
+    phoneB.setOffline(true);
+    ok(await a.command((s) => s.update('shopping_item', id, { note: '2 kartony' })));
+    await a.syncNow();
+    ok(await b.command((s) => s.update('shopping_item', id, { note: 'bez laktozy' })));
+    phoneB.setOffline(false);
+    await b.syncNow();
+    const [item] = await store(b).attention();
+    // Neither a missing nor a forged parent reference can come out of a merge.
+    ok(await b.command((s) => s.resolve(item!.id, { choice: 'merge', data: { listId: other, name: 'Mleko', quantity: '', note: '2 kartony, bez laktozy', checked: false, sortKey: 1 } })));
+    await b.syncNow();
+    expect(serverRow(id, 'shopping_items')).toMatchObject({ list_id: list, note: '2 kartony, bez laktozy', version: 3 });
+    expect(b.getSnapshot()).toMatchObject({ unsent: 0, attention: 0 });
+  });
+
   it('usunięcie kontra edycja zachowuje treść; przywrócenie z moją wersją', async () => {
     const { phoneB, a, b, id } = await sharedNote();
     phoneB.setOffline(true);

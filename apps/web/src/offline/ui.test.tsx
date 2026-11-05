@@ -93,6 +93,74 @@ it('konflikt: obie wersje, połączenie ręczne i ponowne sprawdzenie wersji na 
   expect(await screen.findByText('Wszystko w porządku')).toBeTruthy();
 });
 
+// Child records carry immutable parent references/keys (listId, taskId+occurrenceKey,
+// targetType+targetId) that the merge screen does not show; the merged version must keep them.
+type ChildCase = {
+  type: 'shopping_item' | 'task_occurrence' | 'reminder'; table: string; columns: string;
+  make: (parents: { list: string; task: string }) => Record<string, unknown>;
+  mine: Record<string, unknown>; theirs: Record<string, unknown>;
+  pick: () => void; expected: (parents: { list: string; task: string }) => Record<string, unknown>;
+};
+const T1 = '2026-11-05T08:00:00.000Z', T2 = '2026-11-05T09:30:00.000Z';
+const childCases: ChildCase[] = [
+  {
+    type: 'shopping_item', table: 'shopping_items', columns: 'list_id AS listId, name, note, version',
+    make: ({ list }) => ({ listId: list, name: 'Mleko', quantity: '', note: '', checked: false, sortKey: 1 }),
+    mine: { note: 'bez laktozy' }, theirs: { note: '2 kartony' },
+    pick: () => {
+      fireEvent.click(screen.getByRole('radio', { name: 'Połącz ręcznie' }));
+      fireEvent.change(screen.getByLabelText('Uwaga – połączona treść'), { target: { value: '2 kartony, bez laktozy' } });
+    },
+    expected: ({ list }) => ({ listId: list, name: 'Mleko', note: '2 kartony, bez laktozy', version: 3 }),
+  },
+  {
+    type: 'task_occurrence', table: 'task_occurrences', columns: 'task_id AS taskId, occurrence_key AS occurrenceKey, completed_at AS completedAt, version',
+    make: ({ task }) => ({ taskId: task, occurrenceKey: '2026-11-05', completedAt: null }),
+    mine: { completedAt: T1 }, theirs: { completedAt: T2 },
+    pick: () => fireEvent.click(screen.getByRole('radio', { name: `Moja: ${T1}` })),
+    expected: ({ task }) => ({ taskId: task, occurrenceKey: '2026-11-05', completedAt: T1, version: 3 }),
+  },
+  {
+    type: 'reminder', table: 'reminders', columns: 'target_type AS targetType, target_id AS targetId, minutes_before AS minutesBefore, version',
+    make: ({ task }) => ({ targetType: 'task', targetId: task, enabled: true, minutesBefore: 15, localTime: null }),
+    mine: { minutesBefore: 30 }, theirs: { minutesBefore: 60 },
+    pick: () => fireEvent.click(screen.getByRole('radio', { name: 'Moja: 30' })),
+    expected: ({ task }) => ({ targetType: 'task', targetId: task, minutesBefore: 30, version: 3 }),
+  },
+];
+
+it.each(childCases)('konflikt $type: połączona wersja zachowuje ukryte powiązanie i dostaje ACK', async (c) => {
+  const phoneA = new Phone(server), phoneB = new Phone(server);
+  const a = await signedIn(phoneA, 'a'), b = await signedIn(phoneB, 'b');
+  const value = (result: { ok: boolean; value?: unknown }) => { expect(result.ok).toBe(true); return String(result.value); };
+  const list = value(await a.command((s) => s.create('shopping_list', { name: 'Dom' }, 'shared')));
+  const task = value(await a.command((s) => s.create('task', {
+    title: 'Podlać kwiaty', description: '', assignee: 'both', dueDate: '2026-11-05', dueAt: null, timezone: 'Europe/Warsaw',
+    completedAt: null, recurrence: { frequency: 'daily', interval: 1, startDate: '2026-11-01' },
+  }, 'shared')));
+  const parents = { list, task };
+  const id = value(await a.command((s) => s.create(c.type, c.make(parents))));
+  await a.syncNow(); await b.syncNow();
+  phoneB.setOffline(true);
+  expect((await a.command((s) => s.update(c.type, id, c.theirs))).ok).toBe(true);
+  await a.syncNow();
+  expect((await b.command((s) => s.update(c.type, id, c.mine))).ok).toBe(true);
+  phoneB.setOffline(false);
+  await b.syncNow();
+
+  render(<Root controller={b} />);
+  go('/zmiany');
+  fireEvent.click(await screen.findByRole('link', { name: /Wpis bez nazwy|Mleko/ }));
+  expect(await screen.findByRole('heading', { level: 2, name: 'Moja wersja (to urządzenie)' })).toBeTruthy();
+  c.pick();
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz połączoną wersję' }));
+  await waitFor(() => expect(window.location.pathname).toBe('/zmiany'));
+  await act(async () => { await b.syncNow(); });
+  expect(server.database.sqlite.prepare(`SELECT ${c.columns} FROM ${c.table} WHERE id = ?`).get(id)).toEqual(c.expected(parents));
+  expect(await screen.findByText('Wszystko w porządku')).toBeTruthy();
+  expect(await b.store!.db.queue.count()).toBe(0);
+});
+
 it('wylogowanie z niewysłanymi zmianami ostrzega i daje eksport; inne konto nie widzi danych', async () => {
   const phone = new Phone(server);
   const tab = await signedIn(phone, 'a');
