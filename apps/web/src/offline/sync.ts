@@ -175,6 +175,11 @@ export class SyncEngine {
       return 'done';
     }
     if (me.user.mustChangePassword) { await this.setStatus({ connection: 'password_change' }); return 'done'; }
+    await this.guard();
+    const settings = await this.api.settings(this.account, this.abort.signal);
+    await this.guard();
+    if (settings.household.id !== this.store.scope.householdId) throw new ApiError('account_mismatch');
+    await this.store.setMeta('settings', settings);
     const deviceId = await this.store.deviceId();
     let pushedAny = await this.pushAll(deviceId);
     await this.pullAll();

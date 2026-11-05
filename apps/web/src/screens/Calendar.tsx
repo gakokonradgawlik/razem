@@ -6,6 +6,7 @@ import type { Errors } from '../ui/form.js';
 import { Icon } from '../ui/icons.js';
 import { pathFor, useParam } from '../router.js';
 import type { Visibility } from '../services.js';
+import { useTimezone } from '../services.js';
 import { WEEKDAYS, addDays, addMonths, formatFullDate, formatInstant, formatIsoDate, formatMonth, instantToLocal, isoDate, monthGrid, todayIn } from '../dates.js';
 import { contractData, maxText, requiredText } from './validation.js';
 import { DeleteRecord, DetailFields, EditLink, FixedPrivacy, LoadingNotice, RecordGate, loaded, useRecords } from './records.js';
@@ -26,8 +27,8 @@ export function eventWhen(event: CalendarEvent): string {
   return data.startAt && data.endAt ? `${formatInstant(data.startAt, data.timezone)} – ${formatInstant(data.endAt, data.timezone)} (${data.timezone})` : '';
 }
 type CalendarEntry = { key: string; title: string; start: string; end: string; when: string; to: string; visibility: Visibility; instant: string };
-function entries(events: CalendarEvent[], dates: Typed<'important_date'>[], from: string, year?: number): CalendarEntry[] {
-  const result: CalendarEntry[] = events.map((event) => ({ key: event.id, title: event.data.title, ...eventDays(event.data),
+export function calendarEntries(events: CalendarEvent[], dates: Typed<'important_date'>[], from: string, year?: number, timezone = DEFAULT_TIMEZONE): CalendarEntry[] {
+  const result: CalendarEntry[] = events.map((event) => ({ key: event.id, title: event.data.title, ...eventDays(event.data, timezone),
     when: eventWhen(event), to: pathFor(eventPaths.detail, { eventId: event.id }), visibility: event.visibility, instant: event.data.startAt ?? '' }));
   for (const date of dates) {
     const occurrence = year === undefined ? nextImportantOccurrence(date.data, from) : importantOccurrence(date.data, year);
@@ -47,9 +48,10 @@ export function CalendarScreen() {
   const [state] = useRecords('calendar_event');
   const [datesState] = useRecords('important_date');
   const events = loaded(state), dates = loaded(datesState);
-  const today = isoDate(todayIn());
+  const timezone = useTimezone();
+  const today = isoDate(todayIn(timezone));
   const [from, setFrom] = useState(today);
-  const upcoming = events && dates ? entries(events, dates, from).filter((entry) => entry.end > from) : null;
+  const upcoming = events && dates ? calendarEntries(events, dates, from, undefined, timezone).filter((entry) => entry.end > from) : null;
   return <>
     <ScreenHeader title="Kalendarz" action={<AddButton label="Nowe wydarzenie" to="/kalendarz/nowe" />} />
     <Segmented label="Widok kalendarza" value={view} onChange={setView} options={[{ value: 'agenda', label: 'Agenda' }, { value: 'month', label: 'Miesiąc' }]} />
@@ -62,13 +64,14 @@ export function CalendarScreen() {
   </>;
 }
 function MonthView({ events, dates }: { events: CalendarEvent[]; dates: Typed<'important_date'>[] }) {
-  const today = todayIn();
+  const timezone = useTimezone();
+  const today = todayIn(timezone);
   const [shown, setShown] = useState({ year: today.year, month: today.month });
   const [selected, setSelected] = useState<string | null>(null);
   const todayKey = isoDate(today), title = formatMonth(shown.year, shown.month);
   const first = isoDate({ ...shown, day: 1 });
   const next = isoDate({ ...addMonths(shown.year, shown.month, 1), day: 1 });
-  const all = entries(events, dates, first, shown.year);
+  const all = calendarEntries(events, dates, first, shown.year, timezone);
   const items = all.filter((entry) => selected ? entry.start <= selected && entry.end > selected : entry.start < next && entry.end > first);
   const shift = (delta: number) => { setShown(addMonths(shown.year, shown.month, delta)); setSelected(null); };
   return <Section>
@@ -97,10 +100,10 @@ function MonthView({ events, dates }: { events: CalendarEvent[]; dates: Typed<'i
 
 type EventForm = { title: string; description: string; visibility: Visibility; allDay: boolean; startDate: string; startTime: string; endDate: string; endTime: string; timezone: string };
 
-function initialEvent(mode: FormMode<'calendar_event'>): EventForm {
+function initialEvent(mode: FormMode<'calendar_event'>, timezone = DEFAULT_TIMEZONE): EventForm {
   if (mode.kind === 'create') {
-    const today = isoDate(todayIn());
-    return { title: '', description: '', visibility: defaultVisibility('calendar_event'), allDay: false, startDate: today, startTime: '18:00', endDate: today, endTime: '19:00', timezone: DEFAULT_TIMEZONE };
+    const today = isoDate(todayIn(timezone));
+    return { title: '', description: '', visibility: defaultVisibility('calendar_event'), allDay: false, startDate: today, startTime: '18:00', endDate: today, endTime: '19:00', timezone };
   }
   const { data, visibility } = mode.record;
   const start = data.startAt ? instantToLocal(data.startAt, data.timezone) : null;
@@ -118,7 +121,7 @@ function EventFormScreen({ mode, initialReminder }: { mode: FormMode<'calendar_e
   const editing = mode.kind === 'edit' ? mode.record : null;
 
   const back = editing ? pathFor(eventPaths.detail, { eventId: editing.id }) : '/kalendarz';
-  const { values, set } = useFormValues<EventForm>(initialEvent(mode));
+  const { values, set } = useFormValues<EventForm>(initialEvent(mode, useTimezone()));
   const [errors, setErrors] = useState<Errors<EventForm>>({});
   const timezone = values.timezone;
   const validate = (): Errors<EventForm> => {

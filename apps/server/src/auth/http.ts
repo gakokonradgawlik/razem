@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { apiErrorSchema, householdSchema, loginRequestSchema, meResponseSchema, passwordChangeRequestSchema } from '@razem/contracts';
+import { apiErrorSchema, householdSchema, loginRequestSchema, meResponseSchema, passwordChangeRequestSchema, settingsPatchSchema, settingsSchema, SYNC_ACCOUNT_HEADER } from '@razem/contracts';
 import { AuthError, publicUser } from './service.js';
 import type { AuthService, Authenticated } from './service.js';
 
@@ -114,4 +114,16 @@ export function registerAuth(app: FastifyInstance, options: HttpAuthOptions) {
   });
 
   app.get('/api/me', async (request) => me(request.auth!));
+
+  // Bound to the account of this request, including when another tab changed the cookie.
+  app.get('/api/settings', async (request, reply) => {
+    if (request.headers[SYNC_ACCOUNT_HEADER] !== request.auth!.user.id) return fail(reply, 409, 'account_mismatch');
+    return settingsSchema.parse(service.accounts.settings(request.auth!.user));
+  });
+  app.patch('/api/settings', { bodyLimit: 4096 }, async (request, reply) => {
+    if (request.headers[SYNC_ACCOUNT_HEADER] !== request.auth!.user.id) return fail(reply, 409, 'account_mismatch');
+    const patch = settingsPatchSchema.safeParse(request.body);
+    if (!patch.success) return fail(reply, 400, 'invalid_request');
+    return settingsSchema.parse(service.accounts.updateSettings(request.auth!.user, patch.data, new Date().toISOString()));
+  });
 }

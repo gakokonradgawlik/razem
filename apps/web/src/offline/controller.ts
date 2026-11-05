@@ -5,7 +5,8 @@
 // the previous account's pending changes stay in its database for its next sign-in.
 import { liveQuery } from 'dexie';
 import type { DexieOptions } from 'dexie';
-import type { MeResponse } from '@razem/contracts';
+import { settingsSchema } from '@razem/contracts';
+import type { MeResponse, Settings, SettingsPatch } from '@razem/contracts';
 import { ApiError } from '../api.js';
 import type { Api } from '../api.js';
 import { LocalStore } from './store.js';
@@ -22,6 +23,7 @@ export type Snapshot = {
   phase: Phase; account: Account | null; status: SyncStatus;
   unsent: number; attention: number; revision: number;
   storage: 'ok' | 'full' | 'unavailable';
+  settings?: Settings | undefined;
   /**
    * Identity of the open account database (changes on every activation, logout and
    * account switch). Screens, query results, forms and commands are bound to it: a value
@@ -103,7 +105,7 @@ export class AppController {
     const store = new LocalStore({ userId: account.userId, householdId: account.householdId }, this.options.dbOptions);
     try { await store.open(); await store.deviceId(); } catch {
       store.close();
-      if (this.generation === generation) this.set({ phase: 'storage_unavailable', account, storage: 'unavailable', generation });
+      if (this.generation === generation) this.set({ phase: 'storage_unavailable', account, settings: undefined, storage: 'unavailable', generation });
       return;
     }
     if (this.generation !== generation) { store.close(); return; } // superseded by a newer activation/logout
@@ -111,8 +113,7 @@ export class AppController {
     this.writeAccount(account);
     this.engine = new SyncEngine(store, this.api, { ...this.options.engine, onAccountMismatch: (me) => { void this.adopt(me); } });
     const subscription = liveQuery(async () => {
-      const [revision, status, counts] = await Promise.all([store.db.meta.get('revision'), store.getMeta<SyncStatus>('status'), store.counts()]);
-      return { revision: Number(revision?.value) || 0, status: { ...INITIAL_STATUS, ...status }, ...counts };
+      return this.readCounts(store);
     }).subscribe({
       next: (value) => { if (this.store === store) this.set({ revision: value.revision, status: value.status, unsent: value.unsent, attention: value.attention }); },
       error: () => { if (this.store === store) this.set({ storage: 'unavailable' }); },
@@ -128,7 +129,9 @@ export class AppController {
     const counts = await store.counts();
     const status = { ...INITIAL_STATUS, ...(await store.getMeta<SyncStatus>('status')) };
     const revision = Number((await store.db.meta.get('revision'))?.value) || 0;
-    return { ...counts, status, revision };
+    const parsed = settingsSchema.safeParse(await store.getMeta('settings'));
+    const settings = parsed.success && parsed.data.userId === store.scope.userId && parsed.data.household.id === store.scope.householdId ? parsed.data : undefined;
+    return { ...counts, status, revision, settings };
   }
 
   private async deactivate() {
@@ -191,11 +194,32 @@ export class AppController {
     await this.deactivate();
     if (store) { try { await store.destroy(); } catch { /* best effort; DB name is account-scoped */ } }
     this.writeAccount(null);
-    this.set({ phase: 'signed_out', account: null, status: INITIAL_STATUS, unsent: 0, attention: 0, revision: 0, storage: 'ok', generation: this.generation });
+    this.set({ phase: 'signed_out', account: null, status: INITIAL_STATUS, unsent: 0, attention: 0, revision: 0, settings: undefined, storage: 'ok', generation: this.generation });
     return { ok: true };
   }
 
   async syncNow() { await this.engine?.sync(); await this.refresh(); }
+
+  async updateSettings(patch: SettingsPatch, generation: number): Promise<import('../services.js').ActionResult> {
+    const store = this.storeFor(generation);
+    if (!store) return { ok: false, reason: 'account_changed' };
+    try {
+      const settings = await this.api.settings(store.scope.userId, undefined, patch);
+      if (this.storeFor(generation) !== store) return { ok: false, reason: 'account_changed' };
+      if (settings.household.id !== store.scope.householdId) return { ok: false, reason: 'account_changed' };
+      await store.db.transaction('rw', store.db.meta, async () => {
+        await store.setMeta('settings', settings);
+        await store.setMeta('revision', (Number(await store.getMeta('revision')) || 0) + 1);
+      });
+      await this.refresh();
+      return { ok: true };
+    } catch (error) {
+      if (error instanceof ApiError) return error.kind === 'invalid_request' ? { ok: false, reason: 'invalid' }
+        : error.kind === 'account_mismatch' ? { ok: false, reason: 'account_changed' } : authFailure(error);
+      // The server may have saved the settings, but local persistence failed. No false success.
+      return { ok: false, reason: 'storage_unavailable' };
+    }
+  }
 
   /** Re-reads counts and status now (the live query also does it, asynchronously). */
   async refresh() {

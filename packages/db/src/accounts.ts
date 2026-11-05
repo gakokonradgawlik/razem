@@ -1,6 +1,7 @@
 import { and, count, eq, gt, isNotNull, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { authEvents, authThrottle, households, sessions, users } from './schema.js';
+import { authEvents, authThrottle, households, preferences, sessions, users } from './schema.js';
+import type { Settings, SettingsPatch } from '@razem/contracts';
 import type { AuthEventKind } from './schema.js';
 
 export type UserRow = typeof users.$inferSelect;
@@ -24,6 +25,32 @@ export class AccountRepository {
   insertUser(row: UserRow) { this.db.insert(users).values({ ...row, login: normalizeLogin(row.login) }).run(); }
   userByLogin(login: string): UserRow | undefined { return this.db.select().from(users).where(eq(users.login, normalizeLogin(login))).get(); }
   userById(id: string): UserRow | undefined { return this.db.select().from(users).where(eq(users.id, id)).get(); }
+  settings(user: UserRow): Settings {
+    const household = this.householdById(user.householdId)!;
+    const preference = this.db.select().from(preferences).where(eq(preferences.userId, user.id)).get();
+    return {
+      userId: user.id, household: { id: household.id, name: household.name, timezone: household.timezone },
+      members: this.db.select({ id: users.id, displayName: users.displayName }).from(users).where(eq(users.householdId, user.householdId)).all(),
+      notifications: { includeTitles: preference?.includeTitles ?? false, shoppingNotifications: preference?.shoppingNotifications ?? false },
+    };
+  }
+  updateSettings(user: UserRow, patch: SettingsPatch, at: string): Settings {
+    return this.transaction(() => {
+      if (patch.displayName !== undefined) this.db.update(users).set({ displayName: patch.displayName }).where(eq(users.id, user.id)).run();
+      if (patch.timezone !== undefined) this.db.update(households).set({ timezone: patch.timezone }).where(eq(households.id, user.householdId)).run();
+      if (patch.includeTitles !== undefined || patch.shoppingNotifications !== undefined) {
+        const previous = this.db.select().from(preferences).where(eq(preferences.userId, user.id)).get();
+        const values = {
+          userId: user.id, timezone: previous?.timezone ?? this.householdById(user.householdId)!.timezone,
+          theme: previous?.theme ?? 'system' as const, pushEnabled: previous?.pushEnabled ?? false,
+          includeTitles: patch.includeTitles ?? previous?.includeTitles ?? false,
+          shoppingNotifications: patch.shoppingNotifications ?? previous?.shoppingNotifications ?? false, updatedAt: at,
+        };
+        this.db.insert(preferences).values(values).onConflictDoUpdate({ target: preferences.userId, set: values }).run();
+      }
+      return this.settings(user);
+    });
+  }
   setPassword(userId: string, passwordHash: string, mustChangePassword: boolean, at: string) {
     return this.db.update(users).set({ passwordHash, mustChangePassword, passwordChangedAt: at }).where(eq(users.id, userId)).run().changes;
   }

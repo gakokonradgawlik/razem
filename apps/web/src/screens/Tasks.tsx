@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { taskDataSchema, nextTaskOccurrence, taskOccurrence, taskOverdue, rescheduleTask, DEFAULT_TIMEZONE, defaultVisibility, localTimeToInstant } from '@razem/contracts';
+import { taskDataSchema, nextTaskOccurrence, taskOccurrence, taskOverdue, rescheduleTask, defaultVisibility, localTimeToInstant } from '@razem/contracts';
 import { AddButton, Button, DateField, EmptyState, List, ListRow, Notice, PrivacyPicker, PrivacyTag, ScreenHeader, Section, Segmented, SelectField, TextArea, TextField } from '../ui/components.js';
 import { FormScreen, useFormValues } from '../ui/form.js';
 import type { Errors } from '../ui/form.js';
 import { pathFor, useParam } from '../router.js';
-import { failureMessage, useServices } from '../services.js';
+import { failureMessage, useServices, useTimezone } from '../services.js';
 import type { Visibility } from '../services.js';
 import { contractData, maxText, requiredText } from './validation.js';
 import { formatInstant, formatIsoDate, instantToLocal, isoDate, todayIn } from '../dates.js';
@@ -37,7 +37,7 @@ function dueLabel(task: Task): string | undefined {
 function isOverdue(task: Task, now = new Date()): boolean {
   return taskOverdue(task.data, now.toISOString());
 }
-function projected(task: Task, occurrences: Typed<'task_occurrence'>[], done = false): Task | null {
+export function projected(task: Task, occurrences: Typed<'task_occurrence'>[], done = false): Task | null {
   if (!task.data.recurrence) return task;
   const completed = occurrences.filter((o) => o.data.taskId === task.id && o.data.completedAt);
   if (done) {
@@ -176,6 +176,7 @@ function initialTask(mode: FormMode<'task'>): TaskForm {
 
 function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
   const services = useServices();
+  const defaultTimezone = useTimezone();
   const editing = mode.kind === 'edit' ? mode.record : null;
   const { values, set, setValues } = useFormValues<TaskForm>(initialTask(mode));
   const [errors, setErrors] = useState<Errors<TaskForm>>({});
@@ -192,7 +193,7 @@ function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
     assignee: values.visibility === 'private' && values.assignee !== 'me' ? 'Prywatne zadanie można przypisać tylko sobie.' : undefined,
   });
   const submit = () => {
-    const timezone = editing?.data.timezone ?? DEFAULT_TIMEZONE;
+    const timezone = editing?.data.timezone ?? defaultTimezone;
     const dueAt = values.dueDate && values.dueTime ? localTimeToInstant(values.dueDate, values.dueTime, timezone) : null;
     const startDate = values.dueDate || null;
     const previous = editing?.data.recurrence;
