@@ -142,6 +142,10 @@ kolejka, ACK/rebase, pull, konflikty, eksport), `sync.ts` (silnik), `controller.
   w tej karcie) przerywa trwające żądanie (AbortController) i kończy cykl przed kolejnym.
   Kontroler przed zamknięciem bazy czeka na koniec przerwanego cyklu (`stopAndSettle`), więc lease
   zwalnia się w otwartej bazie i ponowne logowanie tego konta od razu wysyła jego kolejkę.
+  Backoff wykładniczy 2 s…5 min z jitterem dla ticków; zdarzenia użytkownika/sieci go pomijają;
+  `Retry-After` przy 429. `navigator.onLine` to tylko podpowiedź: próba zawsze idzie do serwera,
+  „Offline” = nieudana próba sieciowa przy `onLine=false`; odpowiedź HTTP 5xx/proxy = „Serwer
+  niedostępny”. 401 → „Zaloguj się, aby wysłać zmiany”, kolejka zostaje do zalogowania tego konta.
 - **Stan interfejsu związany z kontem**: każda aktywacja bazy konta (logowanie, przełączenie,
   przejęcie sesji z innej karty, wylogowanie) dostaje nową **generację**. `AppServices` niesie
   `accountKey` (konto + generacja), a wszystkie ich odczyty i komendy są związane z tą generacją:
@@ -151,10 +155,6 @@ kolejka, ACK/rebase, pull, konflikty, eksport), `sync.ts` (silnik), `controller.
   z widoku; `useLoad` ma `accountKey` w zależnościach (rewizje różnych baz mogą być równe).
   Użytkownik widzi komunikat „Otwarto konto: …”; niezapisany formularz A nie jest przenoszony
   (szkic nie jest zachowywany), a niewysłane zmiany A czekają w bazie A.
-  Backoff wykładniczy 2 s…5 min z jitterem dla ticków; zdarzenia użytkownika/sieci go pomijają;
-  `Retry-After` przy 429. `navigator.onLine` to tylko podpowiedź: próba zawsze idzie do serwera,
-  „Offline” = nieudana próba sieciowa przy `onLine=false`; odpowiedź HTTP 5xx/proxy = „Serwer
-  niedostępny”. 401 → „Zaloguj się, aby wysłać zmiany”, kolejka zostaje do zalogowania tego konta.
 - **Status** (wspólny dla kart, w `meta`): „Zsynchronizowano HH:MM” tylko po udanym cyklu i bez
   niewysłanych zmian; licznik = wpisy kolejki + zmiany w konfliktach. Pierwszeństwo: brak
   miejsca/pamięci > zmiany do sprawdzenia > logowanie > nowa wersja > offline > serwer > liczba.
