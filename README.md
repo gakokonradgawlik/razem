@@ -6,9 +6,25 @@ sesje i serwis uprawnień. RAZ-4: serwer synchronizacji (push/pull, idempotencja
 konflikty, kosz/tombstones, retencja). RAZ-3: interfejs w stylu iOS i szkielet wszystkich
 ekranów — listy, szczegóły, edycja, zawartość list zakupów. RAZ-5: prawdziwe logowanie,
 lokalna baza IndexedDB per konto (Dexie), kolejka zmian, synchronizacja aktywnej aplikacji,
-konflikty, eksport niewysłanych zmian i wylogowanie. Service Worker/instalacja offline (RAZ-6)
-i przypomnienia mają kolejne zadania; bez Service Workera aplikacja nie otworzy się od zera
-w trybie samolotowym, ale otwarta karta pracuje offline i nie gubi zmian.
+konflikty, eksport niewysłanych zmian i wylogowanie. RAZ-6: instalacja PWA, lokalny shell
+offline i aktualizacje po zamknięciu wszystkich okien aplikacji. Przypomnienia mają kolejne zadanie.
+
+## Instalacja PWA i offline
+
+Pierwsze otwarcie wymaga internetu i serwera: zaloguj się, poczekaj na „Zsynchronizowano”
+oraz „Aplikacja gotowa do uruchamiania offline” w Ustawienia → Instalacja na iPhonie.
+W Safari: Udostępnij → Do ekranu początkowego → Dodaj. Uruchom ikoną jeszcze raz online,
+sprawdź konto i gotowość offline; potem działa też uruchomienie od zera w trybie samolotowym.
+Produkcja wymaga HTTPS z zaufanym certyfikatem (lokalny loopback HTTP jest wyjątkiem testowym).
+Service Worker rejestruje się tylko w buildzie produkcyjnym, nie w `npm run dev`.
+
+Nowa wersja wyświetla komunikat: zapisz formularze, zamknij **wszystkie** okna/karty Razem
+i otwórz ponownie. Nie ma automatycznego przeładowania. Zapisany outbox i konflikty zostają
+w bazie konta; nie muszą być wysłane przed aktualizacją. Sama niezapisana treść formularza
+nie przetrwa świadomego zamknięcia — najpierw użyj Zapisz.
+Ochrona magazynu jest prośbą do przeglądarki, nie backupem. Odmowa/brak wsparcia nie blokuje
+zapisu; usunięcie danych witryny może usunąć niewysłane zmiany. Ustawienia pokazują wynik
+i udostępniają eksport. Szczegóły oraz granice testów: [quality/raz-6.md](quality/raz-6.md).
 
 ## Start
 
@@ -81,6 +97,11 @@ Trzeci, **127.0.0.1:4319** (`tests/start-sync-server.mjs`), to zbudowany serwer 
 z tymczasową bazą i dwoma syntetycznymi kontami do scenariuszy offline/konfliktów
 (`tests/e2e/offline.spec.ts`); różni się tylko `secureCookies=false`, bo WebKit na Linuksie
 nie przechowuje ciasteczek `Secure` po http.
+Dwa dodatkowe serwery na **127.0.0.1:4320/4321** obsługują izolowane scenariusze PWA
+Chromium/WebKit (`tests/e2e/pwa.spec.ts`). Używają kopii buildu z różnymi nazwami zasobów
+wersji A/B, potrafią symulować niekompletną aktualizację i rzeczywistą awarię API.
+Sterowanie awarią/wersją istnieje wyłącznie w skrypcie testowym, poza aplikacją produkcyjną.
+Cold start zamyka cały proces przeglądarki i otwiera jej trwały profil przy odciętej sieci.
 `reuseExistingServer: false` zapobiega badaniu cudzej usługi. Raporty z `test-results/`
 usuń po analizie (mogą zawierać dane, gdy późniejsze testy użyją prawdziwych kont).
 WebKit nie zastępuje fizycznego iPhone'a.
@@ -129,4 +150,5 @@ Czytaj [docs/START.md](docs/START.md), [kontrakt v1](architecture/contracts.md),
 [synchronizację](architecture/sync.md), [bezpieczeństwo](security/access.md)
 i [repozytorium/wersje](operations/repository.md). Dokumentacja produktu opisuje
 docelowe MVP; zrealizowany zakres i dowody: [quality/raz-1.md](quality/raz-1.md), [quality/raz-2.md](quality/raz-2.md), [quality/raz-3.md](quality/raz-3.md), [quality/raz-5.md](quality/raz-5.md).
-W repo nie ma kont demo, haseł domyślnych, kluczy ani danych domowników.
+PWA: [quality/raz-6.md](quality/raz-6.md). W repo nie ma kont demo, haseł domyślnych,
+kluczy ani danych domowników.

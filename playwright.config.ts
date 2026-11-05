@@ -16,7 +16,12 @@ export default defineConfig({
     url: 'http://127.0.0.1:4317/readyz',
     reuseExistingServer: false,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
-  }, {
+  }, ...[4320, 4321].map((port) => ({
+    command: `node tests/start-sync-server.mjs --pwa ${port}`,
+    url: `http://127.0.0.1:${port}/readyz`,
+    reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 5000 },
+  })), {
     // Signed-in offline/sync scenarios (tests/e2e/offline.spec.ts), synthetic accounts.
     command: 'node tests/start-sync-server.mjs',
     url: 'http://127.0.0.1:4319/readyz',

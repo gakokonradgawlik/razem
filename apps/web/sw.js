@@ -4,9 +4,15 @@ const ASSETS = __PRECACHE__;
 
 self.addEventListener('install', (event) => {
   // addAll is atomic: a missing file/quota/network failure leaves the old worker active.
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(
-    ASSETS.map((url) => new Request(url, { cache: 'reload', credentials: 'omit' })),
-  )));
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    try {
+      await cache.addAll(ASSETS.map((url) => new Request(url, { cache: 'reload', credentials: 'omit' })));
+    } catch (error) {
+      await caches.delete(CACHE); // An unsuccessful candidate must not leave an empty cache.
+      throw error;
+    }
+  })());
   // Never skipWaiting: all old clients must close before the next version activates.
 });
 
@@ -23,8 +29,8 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
   // Also exclude navigation to API endpoints. Never use the shell as an API response.
   if (url.pathname === '/api' || url.pathname.startsWith('/api/') || ['/healthz', '/readyz'].includes(url.pathname)) return;
-  const asset = request.mode === 'navigate' ? '/index.html'
-    : !url.search && ASSETS.includes(url.pathname) ? url.pathname : null;
+  const asset = !url.search && ASSETS.includes(url.pathname) ? url.pathname
+    : request.mode === 'navigate' && !url.pathname.includes('.') ? '/index.html' : null;
   if (!asset) return; // Unknown requests go to network and never enter Cache API.
   event.respondWith(caches.open(CACHE).then(async (cache) =>
     (await cache.match(asset)) ?? Response.error()));
