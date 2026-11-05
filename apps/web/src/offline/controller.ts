@@ -32,7 +32,7 @@ export type Snapshot = {
   generation: number;
 };
 
-export type AuthResult = { ok: true } | { ok: false; reason: 'invalid_credentials' | 'rate_limited' | 'weak_password' | 'authentication_required' | 'unavailable' | 'pending_changes' | 'storage_unavailable'; retryAfterSeconds?: number };
+export type AuthResult = { ok: true } | { ok: false; reason: 'invalid_credentials' | 'rate_limited' | 'weak_password' | 'authentication_required' | 'unavailable' | 'pending_changes' | 'storage_unavailable' | 'account_changed'; retryAfterSeconds?: number };
 
 type KeyValue = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export type ControllerOptions = {
@@ -185,12 +185,18 @@ export class AppController {
    * (after sending or exporting). Needs the server, so the session is really ended;
    * then this account's local database is deleted.
    */
-  async logout(options: { discardPending: boolean }): Promise<AuthResult> {
-    if (this.snapshot.unsent > 0 && !options.discardPending) return { ok: false, reason: 'pending_changes' };
-    try { await this.api.logout(); } catch (error) {
+  async logout(options: { discardPending: boolean }, generation = this.snapshot.generation): Promise<AuthResult> {
+    const store = this.storeFor(generation);
+    if (!store) return { ok: false, reason: 'account_changed' };
+    // Live snapshots may lag a command or another tab. Read the durable queue itself.
+    if ((await store.counts()).unsent > 0 && !options.discardPending) return { ok: false, reason: 'pending_changes' };
+    if (this.storeFor(generation) !== store) return { ok: false, reason: 'account_changed' };
+    try { await this.api.logout(store.scope.userId); } catch (error) {
       if (!(error instanceof ApiError && error.kind === 'authentication_required')) return { ok: false, reason: 'unavailable' };
     }
-    const store = this.store;
+    if (this.storeFor(generation) !== store) return { ok: false, reason: 'account_changed' };
+    // A write made while the network request was pending must still require a choice.
+    if ((await store.counts()).unsent > 0 && !options.discardPending) return { ok: false, reason: 'pending_changes' };
     await this.deactivate();
     if (store) { try { await store.destroy(); } catch { /* best effort; DB name is account-scoped */ } }
     this.writeAccount(null);

@@ -98,6 +98,8 @@ export function registerAuth(app: FastifyInstance, options: HttpAuthOptions) {
   });
 
   app.post('/api/auth/logout', { bodyLimit: 1024 }, async (request, reply) => {
+    const expected = request.headers[SYNC_ACCOUNT_HEADER];
+    if (expected !== undefined && expected !== request.auth!.user.id) return fail(reply, 409, 'account_mismatch');
     service.logout(request.auth!);
     clearSession(reply);
     return reply.code(204).send();

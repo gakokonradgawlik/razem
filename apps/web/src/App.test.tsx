@@ -47,7 +47,7 @@ it('każdy ekran MVP (także szczegóły i edycja) ma polski tytuł; bez magazyn
     } else await waitFor(() => expect(screen.getAllByRole('link').some((link) => link.classList.contains('button'))).toBe(true));
   }
   go('/kosz');
-  expect(await screen.findByText('Kosz jest pusty')).toBeTruthy();
+  expect(await screen.findByText('Nie można wczytać kosza z tego urządzenia. Zaloguj się lub spróbuj ponownie.')).toBeTruthy();
   go('/nie-ma-takiej');
   expect(screen.getByRole('heading', { level: 1, name: 'Nie znaleziono' })).toBeTruthy();
 });

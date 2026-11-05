@@ -31,7 +31,7 @@ export function assigneeLabel(task: Task): string {
 }
 const assignedToMe = (task: Task) => assigneeForViewer(task.data.assignee, task.mine) !== 'other';
 function dueLabel(task: Task): string | undefined {
-  if (task.data.dueAt) return formatInstant(task.data.dueAt);
+  if (task.data.dueAt) return formatInstant(task.data.dueAt, task.data.timezone);
   return task.data.dueDate ? formatIsoDate(task.data.dueDate) : undefined;
 }
 function isOverdue(task: Task, now = new Date()): boolean {
@@ -176,7 +176,8 @@ function initialTask(mode: FormMode<'task'>): TaskForm {
 
 function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
   const services = useServices();
-  const defaultTimezone = useTimezone();
+  const timezone = useTimezone();
+  const [defaultTimezone] = useState(timezone);
   const editing = mode.kind === 'edit' ? mode.record : null;
   const { values, set, setValues } = useFormValues<TaskForm>(initialTask(mode));
   const [errors, setErrors] = useState<Errors<TaskForm>>({});
@@ -226,7 +227,7 @@ function TaskFormScreen({ mode }: { mode: FormMode<'task'> }) {
       <div className="group">
         <div className="field-row">
           <DateField label={editing?.data.recurrence ? "Nowy harmonogram od" : "Termin – dzień"} hint={editing?.data.recurrence ? "Przy zmianie wybierz przyszły dzień. Wcześniejsze terminy i ukończenia pozostaną." : undefined} value={values.dueDate} onValue={set('dueDate')} error={errors.dueDate} />
-          <DateField label="Godzina (opcjonalnie)" type="time" value={values.dueTime} onValue={set('dueTime')} />
+          <DateField label="Godzina (opcjonalnie)" hint={`Strefa: ${editing?.data.timezone ?? defaultTimezone}`} type="time" value={values.dueTime} onValue={set('dueTime')} />
         </div>
         <SelectField<Repeat> label="Powtarzaj" value={values.repeat} onValue={set('repeat')}
           hint="Np. co miesiąc 31. dnia: w krótszych miesiącach ostatniego dnia."

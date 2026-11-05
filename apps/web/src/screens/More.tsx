@@ -5,10 +5,10 @@ import { AddButton, Button, EmptyState, Notice, List, ListRow, PrivacyPicker, Pr
 import { FormScreen, useFormValues } from '../ui/form.js';
 import type { Errors } from '../ui/form.js';
 import { navigate, pathFor, useParam } from '../router.js';
-import { failureMessage, useServices } from '../services.js';
+import { failureMessage, useServices, useTimezone } from '../services.js';
 import type { NoteCopy, TrashItem, Visibility } from '../services.js';
 import { contractData, maxText, requiredText } from './validation.js';
-import { formatDayMonth, isoDate, todayIn } from '../dates.js';
+import { formatDayMonth, formatInstant, isoDate, todayIn } from '../dates.js';
 import { changedFields, DeleteRecord, DetailFields, EditLink, FixedPrivacy, LoadingNotice, MissingRecord, RecordGate, loaded, persist, useLoad, useRecord, useRecords } from './records.js';
 import type { FormMode, Typed } from './records.js';
 import { ReminderDetail, ReminderFields, ReminderGate, useCalendarPersist, useReminder, yearsLabel } from './calendar-shared.js';
@@ -171,8 +171,10 @@ function ShareNote({ note }: { note: Typed<'note'> }) {
 
 const kindLabel = { birthday: 'Urodziny', anniversary: 'Rocznica', other: 'Inne' } as const;
 export function ImportantDatesScreen() {
+  const timezone = useTimezone();
+  const today = isoDate(todayIn(timezone));
   const [state] = useRecords('important_date');
-  const dates = loaded(state)?.sort((a, b) => a.data.month - b.data.month || a.data.day - b.data.day);
+  const dates = loaded(state)?.sort((a, b) => nextImportantOccurrence(a.data, today).date.localeCompare(nextImportantOccurrence(b.data, today).date) || a.id.localeCompare(b.id));
   return (
     <>
       <ScreenHeader title="Ważne daty" back={{ to: '/wiecej', label: 'Więcej' }} action={<AddButton label="Nowa ważna data" to="/wazne-daty/nowa" />} />
@@ -184,7 +186,7 @@ export function ImportantDatesScreen() {
             : <List label="Ważne daty">
               {dates.map((date) => (
                 <ListRow key={date.id} to={pathFor(datePaths.detail, { dateId: date.id })} icon="heart" iconTone="pink" title={date.data.name}
-                  detail={`${formatDayMonth(date.data.month, date.data.day)} · ${kindLabel[date.data.kind]}${yearsLabel(nextImportantOccurrence(date.data, isoDate(todayIn())).years)}`} value={<PrivacyTag value={date.visibility} />} />
+                  detail={`${formatDayMonth(date.data.month, date.data.day)} · ${kindLabel[date.data.kind]}${yearsLabel(nextImportantOccurrence(date.data, today).years)}`} value={<PrivacyTag value={date.visibility} />} />
               ))}
             </List>}
       </Section>
@@ -248,6 +250,8 @@ export function EditImportantDateScreen() {
 }
 
 export function ImportantDateDetailScreen() {
+  const timezone = useTimezone();
+  const today = isoDate(todayIn(timezone));
   const dateId = useParam('dateId');
   const back = { to: '/wazne-daty', label: 'Ważne daty' };
   return (
@@ -259,7 +263,7 @@ export function ImportantDateDetailScreen() {
             <DetailFields rows={[
               { label: 'Data', value: `${formatDayMonth(date.data.month, date.data.day)}, co roku` },
               { label: 'Rodzaj', value: kindLabel[date.data.kind] },
-              { label: 'Najbliższe wystąpienie', value: `${nextImportantOccurrence(date.data, isoDate(todayIn())).date}${yearsLabel(nextImportantOccurrence(date.data, isoDate(todayIn())).years)}` },
+              { label: 'Najbliższe wystąpienie', value: `${nextImportantOccurrence(date.data, today).date}${yearsLabel(nextImportantOccurrence(date.data, today).years)}` },
               ...(date.data.startYear ? [{ label: 'Rok początkowy', value: String(date.data.startYear) }] : []),
               { label: 'Widoczność', value: <PrivacyTag value={date.visibility} /> },
             ]} />
@@ -278,26 +282,33 @@ export function TrashScreen() {
   const services = useServices();
   const [state, reload] = useLoad(() => services.listTrash ? services.listTrash() : Promise.resolve({ status: 'unavailable' as const }), 'trash');
   const [failure, setFailure] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const items = state.status === 'ok' ? state.value : state.status === 'loading' ? null : [];
   const restore = async (item: TrashItem) => {
-    const result = await services.restoreRecord?.(item.entityType, item.id);
-    setFailure(result && !result.ok ? failureMessage(result) : null);
-    reload();
+    if (restoring) return;
+    setRestoring(true); setFailure(null);
+    try {
+      const result = await services.restoreRecord?.(item.entityType, item.id);
+      if (!result) setFailure('Przywracanie nie jest dostępne.');
+      else if (!result.ok) setFailure(failureMessage(result));
+      else reload();
+    } catch { setFailure('Nie przywrócono wpisu. Spróbuj ponownie.'); } finally { setRestoring(false); }
   };
   return (
     <>
       <ScreenHeader title="Kosz" back={{ to: '/wiecej', label: 'Więcej' }} />
       {failure && <Notice tone="danger" role="alert">{failure}</Notice>}
-      <Section footer="Usunięte wpisy są przechowywane przez 30 dni, potem znikają na stałe.">
-        {items === null ? <LoadingNotice />
+      <Section footer="Serwer przechowuje usunięte wpisy przez 30 dni. Po długiej pracy offline synchronizacja potwierdzi, które wpisy można jeszcze przywrócić.">
+        {state.status === 'unavailable' ? <Notice tone="warning">Nie można wczytać kosza z tego urządzenia. Zaloguj się lub spróbuj ponownie.</Notice> : items === null ? <LoadingNotice />
           : items.length === 0 ? <EmptyState icon="trash" title="Kosz jest pusty" text="Usunięte zakupy, zadania, wydarzenia i notatki można stąd przywrócić." />
             : (
               <List label="Usunięte wpisy">
                 {items.map((item) => (
                   <li key={item.id} className="row row--stack">
                     <span className="row__text"><span className="row__title">{item.title}</span>
-                      <span className="row__detail">{trashLabel[item.entityType] ?? 'Wpis'} · <PrivacyTag value={item.visibility} /></span></span>
-                    <Button variant="tinted" onClick={() => void restore(item)}>Przywróć</Button>
+                      <span className="row__detail">{trashLabel[item.entityType] ?? 'Wpis'} · <PrivacyTag value={item.visibility} /></span>
+                      <span className="row__detail">Usunięto: {formatInstant(item.deletedAt)}</span></span>
+                    <Button variant="tinted" disabled={restoring || !services.restoreRecord} onClick={() => void restore(item)}>Przywróć</Button>
                   </li>
                 ))}
               </List>

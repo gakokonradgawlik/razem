@@ -2,6 +2,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { usePwaState, useStandalone } from '../pwa.js';
 import { persistenceSnapshot, subscribePersistence } from '../storage-persistence.js';
 import { settingsPatchSchema } from '@razem/contracts';
+import type { Settings } from '@razem/contracts';
 import { FormScreen } from '../ui/form.js';
 import type { Errors } from '../ui/form.js';
 import { Button, List, ListRow, Notice, ScreenHeader, Section, Segmented, SyncBadge, TextField, Toggle } from '../ui/components.js';
@@ -151,14 +152,20 @@ function StorageNotice() {
   </Notice>;
 }
 
+function MissingSettings({ title }: { title: string }) {
+  return <><ScreenHeader title={title} back={{ to: '/ustawienia', label: 'Ustawienia' }} /><Notice tone="warning">Połącz się z serwerem i wybierz „Synchronizuj teraz”, aby pobrać ustawienia domu.</Notice></>;
+}
 export function ProfileScreen() {
+  const { settings } = useServices();
+  return settings ? <ProfileForm settings={settings} /> : <MissingSettings title="Profil i domownicy" />;
+}
+function ProfileForm({ settings }: { settings: Settings }) {
   const services = useServices();
-  const settings = services.settings;
-  const own = settings?.members.find((member) => member.id === settings.userId);
+  const [baseline] = useState(settings);
+  const own = baseline.members.find((member) => member.id === baseline.userId);
   const [displayName, setDisplayName] = useState(own?.displayName ?? services.session?.displayName ?? '');
-  const [timezone, setTimezone] = useState(settings?.household.timezone ?? 'Europe/Warsaw');
+  const [timezone, setTimezone] = useState(baseline.household.timezone);
   const [errors, setErrors] = useState<Errors<{ displayName: string; timezone: string }>>({});
-  if (!settings) return <><ScreenHeader title="Profil i domownicy" back={{ to: '/ustawienia', label: 'Ustawienia' }} /><Notice tone="warning">Połącz się z serwerem i wybierz „Synchronizuj teraz”, aby pobrać ustawienia domu.</Notice></>;
   return <FormScreen title="Profil i domownicy" cancelTo="/ustawienia" doneTo="/ustawienia" errors={errors} setErrors={setErrors}
     validate={() => {
       const result = settingsPatchSchema.safeParse({ displayName, timezone });
@@ -166,7 +173,7 @@ export function ProfileScreen() {
       return Object.fromEntries(result.error.issues.map((issue) => [issue.path[0], issue.path[0] === 'timezone' ? 'Podaj poprawną strefę, np. Europe/Warsaw.' : 'Wpisz nazwę od 1 do 200 znaków.']));
     }}
     onSubmit={() => {
-      const patch = { ...(displayName.trim() !== own?.displayName ? { displayName: displayName.trim() } : {}), ...(timezone !== settings.household.timezone ? { timezone } : {}) };
+      const patch = { ...(displayName.trim() !== own?.displayName ? { displayName: displayName.trim() } : {}), ...(timezone !== baseline.household.timezone ? { timezone } : {}) };
       return Object.keys(patch).length ? services.updateSettings?.(patch) ?? Promise.resolve({ ok: false, reason: 'not_implemented' }) : Promise.resolve({ ok: true });
     }}>
     <div className="group">
@@ -180,15 +187,19 @@ export function ProfileScreen() {
 }
 
 export function NotificationsScreen() {
+  const { settings } = useServices();
+  return settings ? <NotificationsForm settings={settings} /> : <MissingSettings title="Powiadomienia" />;
+}
+function NotificationsForm({ settings }: { settings: Settings }) {
   const services = useServices();
-  const settings = services.settings;
-  const [includeTitles, setIncludeTitles] = useState(settings?.notifications.includeTitles ?? false);
-  const [shoppingNotifications, setShoppingNotifications] = useState(settings?.notifications.shoppingNotifications ?? false);
+  const [baseline] = useState(settings.notifications);
+  const [includeTitles, setIncludeTitles] = useState(baseline.includeTitles);
+  const [shoppingNotifications, setShoppingNotifications] = useState(baseline.shoppingNotifications);
   const [errors, setErrors] = useState<Errors<Record<string, string>>>({});
   return <FormScreen title="Powiadomienia" cancelTo="/ustawienia" doneTo="/ustawienia" errors={errors} setErrors={setErrors} validate={() => ({})}
     onSubmit={() => {
       if (!settings || !services.updateSettings) return Promise.resolve({ ok: false, reason: 'unavailable' });
-      const patch = { ...(includeTitles !== settings.notifications.includeTitles ? { includeTitles } : {}), ...(shoppingNotifications !== settings.notifications.shoppingNotifications ? { shoppingNotifications } : {}) };
+      const patch = { ...(includeTitles !== baseline.includeTitles ? { includeTitles } : {}), ...(shoppingNotifications !== baseline.shoppingNotifications ? { shoppingNotifications } : {}) };
       return Object.keys(patch).length ? services.updateSettings(patch) : Promise.resolve({ ok: true });
     }}>
     <Notice tone="warning">Powiadomienia nie są jeszcze wysyłane. Możesz zapisać preferencje konta na przyszłość; zapis wymaga połączenia. Nie gwarantujemy alarmu offline.</Notice>

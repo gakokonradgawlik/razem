@@ -78,7 +78,7 @@ export class Api {
   async changePassword(currentPassword: string, newPassword: string): Promise<MeResponse> {
     return this.parse(meResponseSchema, await this.request('/api/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }));
   }
-  async logout(): Promise<void> { await this.request('/api/auth/logout', { method: 'POST', body: '{}' }); }
+  async logout(account: string): Promise<void> { await this.request('/api/auth/logout', { method: 'POST', body: '{}', headers: { [SYNC_ACCOUNT_HEADER]: account } }); }
   /**
    * Sync requests carry the account their local database belongs to; the server checks it
    * against the session of the same request (409 account_mismatch), so a session switched to
