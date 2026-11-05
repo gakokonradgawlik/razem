@@ -37,3 +37,4 @@ export * from './accounts.js';
 export * from './records.js';
 export * from './sync-store.js';
 export * from './snapshot.js';
+export * from './push.js';

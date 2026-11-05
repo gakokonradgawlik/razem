@@ -114,19 +114,26 @@ export const preferences = sqliteTable('preferences', {
   pushEnabled: integer('push_enabled', { mode: 'boolean' }).notNull(),
   includeTitles: integer('include_titles', { mode: 'boolean' }).notNull(),
   shoppingNotifications: integer('shopping_notifications', { mode: 'boolean' }).notNull(),
+  taskReminders: integer('task_reminders', { mode: 'boolean' }).notNull().default(true),
+  taskReminderTime: text('task_reminder_time').notNull().default('09:00'),
+  taskMinutesBefore: integer('task_minutes_before').notNull().default(0),
+  taskAssignments: integer('task_assignments', { mode: 'boolean' }).notNull().default(true),
   updatedAt: text('updated_at').notNull(),
 });
 export const pushSubscriptions = sqliteTable('push_subscriptions', {
   id: text('id').primaryKey(), userId: text('user_id').notNull(), deviceId: text('device_id').notNull(),
   endpoint: text('endpoint').notNull(), p256dh: text('p256dh').notNull(), auth: text('auth').notNull(),
-  expirationTime: integer('expiration_time'), createdAt: text('created_at').notNull(),
+  expirationTime: integer('expiration_time'), createdAt: text('created_at').notNull(), sessionId: text('session_id'),
 });
 export const reminderDispatches = sqliteTable('reminder_dispatches', {
-  id: text('id').primaryKey(), reminderId: text('reminder_id').notNull(), userId: text('user_id').notNull(),
+  id: text('id').primaryKey(), subscriptionId: text('subscription_id').notNull(), userId: text('user_id').notNull(),
+  targetType: text('target_type').notNull(), targetId: text('target_id').notNull(), kind: text('kind').notNull(), eventSequence: integer('event_sequence'),
   deduplicationKey: text('deduplication_key').notNull(), scheduledAt: text('scheduled_at').notNull(),
-  state: text('state', { enum: ['pending', 'processing', 'sent', 'failed'] }).notNull(),
-  attempts: integer('attempts').notNull(), nextAttemptAt: text('next_attempt_at'),
-  leaseUntil: text('lease_until'), sentAt: text('sent_at'),
+  state: text('state').notNull(), attempts: integer('attempts').notNull(), nextAttemptAt: text('next_attempt_at').notNull(),
+  leaseUntil: text('lease_until'), leaseToken: text('lease_token'), sentAt: text('sent_at'),
+});
+export const workerState = sqliteTable('worker_state', {
+  id: integer('id').primaryKey(), taskSequence: integer('task_sequence').notNull(), shoppingSequence: integer('shopping_sequence').notNull(),
 });
 
 export const tombstones = sqliteTable('tombstones', {

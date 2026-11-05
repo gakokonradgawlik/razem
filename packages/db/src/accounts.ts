@@ -31,20 +31,22 @@ export class AccountRepository {
     return {
       userId: user.id, household: { id: household.id, name: household.name, timezone: household.timezone },
       members: this.db.select({ id: users.id, displayName: users.displayName }).from(users).where(eq(users.householdId, user.householdId)).all(),
-      notifications: { includeTitles: preference?.includeTitles ?? false, shoppingNotifications: preference?.shoppingNotifications ?? false },
+      notifications: { includeTitles: preference?.includeTitles ?? false, shoppingNotifications: preference?.shoppingNotifications ?? false, taskReminders: preference?.taskReminders ?? true, taskReminderTime: preference?.taskReminderTime ?? '09:00', taskMinutesBefore: preference?.taskMinutesBefore ?? 0, taskAssignments: preference?.taskAssignments ?? true },
     };
   }
   updateSettings(user: UserRow, patch: SettingsPatch, at: string): Settings {
     return this.transaction(() => {
       if (patch.displayName !== undefined) this.db.update(users).set({ displayName: patch.displayName }).where(eq(users.id, user.id)).run();
       if (patch.timezone !== undefined) this.db.update(households).set({ timezone: patch.timezone }).where(eq(households.id, user.householdId)).run();
-      if (patch.includeTitles !== undefined || patch.shoppingNotifications !== undefined) {
+      if (['includeTitles','shoppingNotifications','taskReminders','taskReminderTime','taskMinutesBefore','taskAssignments'].some((key) => key in patch)) {
         const previous = this.db.select().from(preferences).where(eq(preferences.userId, user.id)).get();
         const values = {
           userId: user.id, timezone: previous?.timezone ?? this.householdById(user.householdId)!.timezone,
           theme: previous?.theme ?? 'system' as const, pushEnabled: previous?.pushEnabled ?? false,
           includeTitles: patch.includeTitles ?? previous?.includeTitles ?? false,
-          shoppingNotifications: patch.shoppingNotifications ?? previous?.shoppingNotifications ?? false, updatedAt: at,
+          shoppingNotifications: patch.shoppingNotifications ?? previous?.shoppingNotifications ?? false,
+          taskReminders: patch.taskReminders ?? previous?.taskReminders ?? true, taskReminderTime: patch.taskReminderTime ?? previous?.taskReminderTime ?? '09:00',
+          taskMinutesBefore: patch.taskMinutesBefore ?? previous?.taskMinutesBefore ?? 0, taskAssignments: patch.taskAssignments ?? previous?.taskAssignments ?? true, updatedAt: at,
         };
         this.db.insert(preferences).values(values).onConflictDoUpdate({ target: preferences.userId, set: values }).run();
       }

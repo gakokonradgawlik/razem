@@ -24,7 +24,7 @@ beforeEach(() => {
   database.sqlite.prepare('INSERT INTO sessions VALUES (?, ?, ?, NULL, NULL, ?, ?, ?)').run(randomUUID(), A.userId, 'a'.repeat(64), TIME, TIME, '2026-12-05T10:00:00.000Z');
   const device = randomUUID();
   database.sqlite.prepare('INSERT INTO devices VALUES (?, ?, ?, ?, ?)').run(device, A.userId, 'syntetyczne urządzenie', TIME, TIME);
-  database.sqlite.prepare('INSERT INTO push_subscriptions VALUES (?, ?, ?, ?, ?, ?, NULL, ?)').run(randomUUID(), A.userId, device, 'https://push.example.test/synthetic', 'synthetic-p256dh', 'synthetic-auth', TIME);
+  database.sqlite.prepare('INSERT INTO push_subscriptions (id,user_id,device_id,endpoint,p256dh,auth,expiration_time,created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)').run(randomUUID(), A.userId, device, 'https://push.example.test/synthetic', 'synthetic-p256dh', 'synthetic-auth', TIME);
 });
 afterEach(async () => {
   for (const close of handles.splice(0).reverse()) await close();
@@ -34,7 +34,7 @@ function open(path: string) { const db = openDatabase(path); handles.push(() => 
 function protectedFile(name: string, content: string) { const path = join(directory, name); writePrivate(path, content); return path; }
 function checkRestore(path: string) {
   const db = open(join(path, 'razem.sqlite'));
-  verifySqlite(db.sqlite); expect(migrationStatus(db.sqlite).current).toBe(4);
+  verifySqlite(db.sqlite); expect(migrationStatus(db.sqlite).current).toBe(5);
   expect(db.sqlite.prepare('SELECT count(*) AS n FROM sessions').get()).toEqual({ n: 0 });
   expect(db.sqlite.prepare('SELECT count(*) AS n FROM push_subscriptions').get()).toEqual({ n: 0 });
   expect(db.sqlite.prepare('SELECT password_hash FROM users').all()).toEqual([{ password_hash: HASH }, { password_hash: HASH }]);
@@ -75,7 +75,7 @@ it('żywy WAL i równoczesny zapis w drugim wątku: spójna kopia, relacje/ACL i
   expect(after).toBeGreaterThan(before); // Commits really happened during VACUUM, outside this blocked JS thread.
   writer.postMessage('stop'); await once(writer, 'exit');
   const manifest = inspectBackup(archive);
-  expect(manifest.schemaVersion).toBe(4);
+  expect(manifest.schemaVersion).toBe(5);
   const frozen = new BetterSqlite3(join(archive, 'database.sqlite'), { readonly: true });
   const count = (frozen.prepare('SELECT count(*) AS n FROM backup_probe').get() as { n: number }).n;
   expect(count).toBeGreaterThanOrEqual(before); expect(count).toBeLessThanOrEqual(after); verifySqlite(frozen); frozen.close();
@@ -147,9 +147,9 @@ it('nieznana/zmieniona historia blokuje restore także po przeliczeniu SHA; snap
   expect(() => inspectBackup(archive)).toThrow(/Suma kontrolna migracji/);
   const changed = new BetterSqlite3(file);
   changed.prepare('UPDATE schema_migrations SET checksum = ? WHERE version = 4').run(createHash('sha256').update(migrations[3]!.sql).digest('hex'));
-  changed.prepare('INSERT INTO schema_migrations VALUES (5, ?, ?, ?)').run('future', 'unknown', TIME); changed.close();
+  changed.prepare('INSERT INTO schema_migrations VALUES (6, ?, ?, ?)').run('future', 'unknown', TIME); changed.close();
   writeFileSync(join(archive, 'manifest.json'), JSON.stringify({ ...manifest, database: digest(file) }));
-  expect(() => restoreBackup(archive, join(directory, 'future'))).toThrow(/nieznaną migrację 5/); expect(existsSync(join(directory, 'future'))).toBe(false);
+  expect(() => restoreBackup(archive, join(directory, 'future'))).toThrow(/nieznaną migrację 6/); expect(existsSync(join(directory, 'future'))).toBe(false);
   const old = open(join(directory, 'old.sqlite')); migrate(old.sqlite, { list: migrations.slice(0, 1) }); seedAccounts(old);
   const pre = join(directory, 'pre-v1.sqlite'); migrate(old.sqlite, { backupPath: () => pre });
   const preDb = new BetterSqlite3(pre, { readonly: true }); verifySqlite(preDb); expect(migrationStatus(preDb).current).toBe(1); preDb.close();

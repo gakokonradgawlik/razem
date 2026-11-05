@@ -12,6 +12,9 @@ services:
       HOST: 0.0.0.0
       PORT: '3100'
       DATABASE_PATH: /data/razem.sqlite
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       # Required behind the HTTPS proxy: exact PWA origin for the CSRF/Origin check.
       PUBLIC_ORIGIN: ${RAZEM_PUBLIC_ORIGIN:-}
       TRUST_PROXY: ${RAZEM_TRUST_PROXY:-}
@@ -43,6 +46,9 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_PATH: /data/razem.sqlite
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
     volumes:
       - data:/data
     read_only: true

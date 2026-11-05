@@ -1,3 +1,4 @@
+import { vapidFromEnv } from '@razem/db';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
 import { argon2ParamsFromEnv } from './auth/passwords.js';
@@ -10,7 +11,9 @@ const { database, migration } = openMigratedDatabase(settings.databasePath);
 if (migration.applied.length > 0) console.info(`Razem: zastosowano migracje ${migration.applied.join(', ')}`);
 if (settings.production && !settings.publicOrigin) console.warn('Razem: brak PUBLIC_ORIGIN – mutacje przyjmowane tylko z originu równego nagłówkowi Host');
 const webRoot = settings.production ? fileURLToPath(new URL('../../web/dist', import.meta.url)) : undefined;
+const vapid = vapidFromEnv();
 const app = await buildApp({
+  ...(vapid ? { vapid } : {}),
   database, ...(webRoot ? { webRoot } : {}), secureCookies: settings.secureCookies, trustProxy: settings.trustProxy,
   ...(settings.publicOrigin ? { publicOrigin: settings.publicOrigin } : {}), auth: { argon2: argon2ParamsFromEnv() },
   maintenanceIntervalMs: 60 * 60 * 1000,

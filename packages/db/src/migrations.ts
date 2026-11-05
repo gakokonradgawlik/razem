@@ -344,11 +344,46 @@ CREATE TABLE task_events (
 CREATE INDEX task_events_sequence ON task_events(household_id, sequence);
 `;
 
+// RAZ-12: old queues/subscriptions were scaffolding, without a session binding.
+// Invalidate them rather than inheriting an unverifiable device association.
+const pushWorkerSql = `
+DELETE FROM push_subscriptions;
+ALTER TABLE push_subscriptions ADD COLUMN session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE;
+ALTER TABLE preferences ADD COLUMN task_reminders INTEGER NOT NULL DEFAULT 1 CHECK(task_reminders IN (0,1));
+ALTER TABLE preferences ADD COLUMN task_reminder_time TEXT NOT NULL DEFAULT '09:00';
+ALTER TABLE preferences ADD COLUMN task_minutes_before INTEGER NOT NULL DEFAULT 0 CHECK(task_minutes_before BETWEEN 0 AND 10080);
+ALTER TABLE preferences ADD COLUMN task_assignments INTEGER NOT NULL DEFAULT 1 CHECK(task_assignments IN (0,1));
+DROP TABLE reminder_dispatches;
+CREATE TABLE reminder_dispatches (
+ id TEXT PRIMARY KEY NOT NULL,
+ subscription_id TEXT NOT NULL REFERENCES push_subscriptions(id) ON DELETE CASCADE,
+ user_id TEXT NOT NULL REFERENCES users(id),
+ target_type TEXT NOT NULL CHECK(target_type IN ('task','calendar_event','important_date','shopping_list','shopping_item')),
+ target_id TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK(kind IN ('reminder','assignment','shopping')),
+ event_sequence INTEGER,
+ deduplication_key TEXT NOT NULL UNIQUE,
+ scheduled_at TEXT NOT NULL,
+ state TEXT NOT NULL CHECK(state IN ('pending','processing','sent','failed','cancelled')),
+ attempts INTEGER NOT NULL DEFAULT 0,
+ next_attempt_at TEXT NOT NULL,
+ lease_until TEXT,
+ lease_token TEXT,
+ sent_at TEXT
+) STRICT;
+CREATE INDEX reminder_dispatches_due ON reminder_dispatches(state,next_attempt_at,lease_until);
+CREATE TABLE worker_state (
+ id INTEGER PRIMARY KEY CHECK(id=1), task_sequence INTEGER NOT NULL, shopping_sequence INTEGER NOT NULL
+) STRICT;
+INSERT INTO worker_state VALUES (1,0,(SELECT coalesce(max(sequence),0) FROM sync_changes));
+`;
+
 export const migrations: readonly Migration[] = [
   { version: 1, name: 'accounts_sessions', sql: accounts },
   { version: 2, name: 'domain_sync_push', sql: domain },
   { version: 3, name: 'sync_tombstones_state', sql: syncServer },
   { version: 4, name: 'task_semantic_events', sql: taskEventsSql },
+  { version: 5, name: 'push_worker', sql: pushWorkerSql },
 ];
 export const LATEST_SCHEMA_VERSION = migrations.length;
 

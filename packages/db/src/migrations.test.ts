@@ -66,16 +66,16 @@ describe('migracje', () => {
     db.close();
     const reopened = openDatabase(path);
     cleanup.push(() => reopened.close());
-    expect(migrationStatus(reopened.sqlite).pending).toEqual([2, 3, 4]);
+    expect(migrationStatus(reopened.sqlite).pending).toEqual([2, 3, 4, 5]);
     const backup = join(dir, 'pre-v1.sqlite');
     const result = migrate(reopened.sqlite, { backupPath: (v) => join(dir, `pre-v${v}.sqlite`) });
-    expect(result).toEqual({ applied: [2, 3, 4], backup });
+    expect(result).toEqual({ applied: [2, 3, 4, 5], backup });
     expect(statSync(backup).mode & 0o777).toBe(0o600);
     expect(reopened.sqlite.prepare('SELECT id, login FROM users ORDER BY login').all()).toEqual([{ id: A, login: 'a@example.test' }, { id: B, login: 'b@example.test' }]);
     expect(reopened.sqlite.prepare('SELECT user_id FROM sessions').get()).toEqual({ user_id: A });
     expect(reopened.sqlite.pragma('foreign_key_check')).toEqual([]);
     expect(reopened.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
-    expect((reopened.sqlite.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: number }>).map((r) => r.version)).toEqual([1, 2, 3, 4]);
+    expect((reopened.sqlite.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: number }>).map((r) => r.version)).toEqual([1, 2, 3, 4, 5]);
     // The member limit survives the upgrade.
     expect(() => reopened.sqlite.prepare('INSERT INTO users VALUES (?, ?, ?, ?, ?, 1, ?, ?)').run(C, H, 'c@example.test', 'Trzecie', HASH, T, T)).toThrow(/member_limit/);
     // The copy is a consistent v1 database with the same rows.
@@ -93,7 +93,7 @@ describe('migracje', () => {
     db.sqlite.prepare("INSERT INTO notes VALUES (?, ?, ?, 'private', 1, ?, ?, NULL, 'Syntetyczna', '')").run(N, H, A, T, T);
     db.sqlite.prepare("INSERT INTO sync_changes (entity_type, entity_id, household_id, owner_id, visibility, version, changed_at) VALUES ('note', ?, ?, ?, 'private', 1, ?)").run(N, H, A, T);
     const result = migrate(db.sqlite, { backupPath: (v) => join(dir, `pre-v${v}.sqlite`) });
-    expect(result.applied).toEqual([3, 4]);
+    expect(result.applied).toEqual([3, 4, 5]);
     expect(db.sqlite.prepare('SELECT id, version FROM notes').all()).toEqual([{ id: N, version: 1 }]);
     expect(db.sqlite.prepare('SELECT count(*) AS n FROM sync_changes').get()).toEqual({ n: 1 });
     const state = db.sqlite.prepare('SELECT cursor_key, journal_floor FROM sync_state').all() as Array<{ cursor_key: string; journal_floor: number }>;
@@ -209,7 +209,7 @@ it('v3 → v4 zachowuje szablony, ukończenia i journal; nowe zdarzenia są bez 
   db.sqlite.prepare("INSERT INTO task_occurrences VALUES (?, ?, ?, 'shared', 2, ?, ?, NULL, ?, '2026-01-31', ?)").run(B, H, A, T, T, C, T);
   db.sqlite.prepare("INSERT INTO sync_changes(entity_type,entity_id,household_id,owner_id,visibility,version,changed_at) VALUES ('task',?,?,?,'shared',7,?)").run(C,H,A,T);
   const backup = join(dir, 'pre-v3.sqlite');
-  expect(migrate(db.sqlite, { backupPath: () => backup })).toEqual({ applied: [4], backup });
+  expect(migrate(db.sqlite, { backupPath: () => backup })).toEqual({ applied: [4, 5], backup });
   expect(db.sqlite.prepare('SELECT version, recurrence FROM tasks').get()).toEqual({ version: 7, recurrence: JSON.stringify({ frequency: 'monthly', interval: 1, startDate: '2026-01-31' }) });
   expect(db.sqlite.prepare('SELECT version, completed_at FROM task_occurrences').get()).toEqual({ version: 2, completed_at: T });
   expect(db.sqlite.prepare('SELECT count(*) n FROM sync_changes').get()).toEqual({ n: 1 });
