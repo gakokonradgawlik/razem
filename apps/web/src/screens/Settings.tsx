@@ -1,8 +1,9 @@
+import { PushOptIn } from '../push.js';
 import { useState, useSyncExternalStore } from 'react';
 import { usePwaState, useStandalone } from '../pwa.js';
 import { persistenceSnapshot, subscribePersistence } from '../storage-persistence.js';
 import { settingsPatchSchema } from '@razem/contracts';
-import type { Settings } from '@razem/contracts';
+import type { Settings, SettingsPatch } from '@razem/contracts';
 import { FormScreen } from '../ui/form.js';
 import type { Errors } from '../ui/form.js';
 import { Button, List, ListRow, Notice, ScreenHeader, Section, Segmented, SyncBadge, TextField, Toggle } from '../ui/components.js';
@@ -62,7 +63,7 @@ export function SettingsScreen() {
         </List>
       </Section>
       <Section title="Powiadomienia">
-        <List><ListRow to="/ustawienia/powiadomienia" disabled={!session} icon="bell" iconTone="red" title="Preferencje powiadomień" detail="Wysyłka będzie dostępna w kolejnej wersji" /></List>
+        <List><ListRow to="/ustawienia/powiadomienia" disabled={!session} icon="bell" iconTone="red" title="Preferencje powiadomień" detail="Przypomnienia i ustawienia tego urządzenia" /></List>
       </Section>
       <Section title="Dane" footer="Pliki eksportu zawierają prywatne treści. Przechowuj je w bezpiecznym miejscu. Kopia serwera nie zawiera niewysłanych zmian ani konfliktów telefonu.">
         <StorageNotice />
@@ -203,16 +204,33 @@ function NotificationsForm({ settings }: { settings: Settings }) {
   const [baseline] = useState(settings.notifications);
   const [includeTitles, setIncludeTitles] = useState(baseline.includeTitles);
   const [shoppingNotifications, setShoppingNotifications] = useState(baseline.shoppingNotifications);
+  const [taskReminders, setTaskReminders] = useState(baseline.taskReminders ?? true);
+  const [taskReminderTime, setTaskReminderTime] = useState(baseline.taskReminderTime ?? '09:00');
+  const [taskMinutesBefore, setTaskMinutesBefore] = useState(String(baseline.taskMinutesBefore ?? 0));
+  const [taskAssignments, setTaskAssignments] = useState(baseline.taskAssignments ?? true);
   const [errors, setErrors] = useState<Errors<Record<string, string>>>({});
-  return <FormScreen title="Powiadomienia" cancelTo="/ustawienia" doneTo="/ustawienia" errors={errors} setErrors={setErrors} validate={() => ({})}
+  return <FormScreen title="Powiadomienia" cancelTo="/ustawienia" doneTo="/ustawienia" errors={errors} setErrors={setErrors}
+    validate={() => settingsPatchSchema.safeParse({ taskReminderTime, taskMinutesBefore: Number(taskMinutesBefore) }).success
+      ? {} : { taskReminderTime: 'Podaj godzinę HH:mm i wyprzedzenie od 0 do 10080 minut.' }}
     onSubmit={() => {
       if (!settings || !services.updateSettings) return Promise.resolve({ ok: false, reason: 'unavailable' });
-      const patch = { ...(includeTitles !== baseline.includeTitles ? { includeTitles } : {}), ...(shoppingNotifications !== baseline.shoppingNotifications ? { shoppingNotifications } : {}) };
+      const patch: SettingsPatch = {
+        ...(taskReminders !== (baseline.taskReminders ?? true) ? { taskReminders } : {}),
+        ...(taskReminderTime !== (baseline.taskReminderTime ?? '09:00') ? { taskReminderTime } : {}),
+        ...(Number(taskMinutesBefore) !== (baseline.taskMinutesBefore ?? 0) ? { taskMinutesBefore: Number(taskMinutesBefore) } : {}),
+        ...(taskAssignments !== (baseline.taskAssignments ?? true) ? { taskAssignments } : {}),
+        ...(includeTitles !== baseline.includeTitles ? { includeTitles } : {}),
+        ...(shoppingNotifications !== baseline.shoppingNotifications ? { shoppingNotifications } : {}),
+      };
       return Object.keys(patch).length ? services.updateSettings(patch) : Promise.resolve({ ok: true });
     }}>
-    <Notice tone="warning">Powiadomienia nie są jeszcze wysyłane. Możesz zapisać preferencje konta na przyszłość; zapis wymaga połączenia. Nie gwarantujemy alarmu offline.</Notice>
+    <Notice tone="warning">Zmiana ustawień i włączenie powiadomień wymagają połączenia. Serwer przypomina tylko o zsynchronizowanych wpisach. Dostarczenie zależy od internetu i ustawień telefonu; nie gwarantujemy punktualnego alarmu offline.</Notice>
     <div className="group">
-      <Button disabled>Włącz powiadomienia — niedostępne w tej wersji</Button>
+      <PushOptIn account={settings.userId} />
+      <Toggle label="Przypomnienia terminów zadań" checked={taskReminders} onChange={setTaskReminders} />
+      <TextField label="Godzina przypomnienia zadania bez godziny" type="time" value={taskReminderTime} onValue={setTaskReminderTime} error={errors.taskReminderTime} />
+      <TextField label="Wyprzedzenie przypomnień zadań (minuty)" type="number" value={taskMinutesBefore} onValue={setTaskMinutesBefore} hint="Domyślnie 0: o godzinie terminu lub o 09:00 dla dnia. Ustawienia dotyczą Twojego konta na wszystkich urządzeniach." />
+      <Toggle label="Powiadomienia o przypisaniu zadania" checked={taskAssignments} onChange={setTaskAssignments} />
       <Toggle label="Tytuły na ekranie blokady" checked={includeTitles} onChange={setIncludeTitles} disabled={!settings} hint="Domyślnie treść będzie ogólna. Włączenie pozwoli pokazywać tytuły Twoich prywatnych i wspólnych wpisów na ekranie blokady." />
       <Toggle label="Zmiany w zakupach" checked={shoppingNotifications} onChange={setShoppingNotifications} disabled={!settings} hint="Opcjonalne, domyślnie wyłączone." />
     </div>

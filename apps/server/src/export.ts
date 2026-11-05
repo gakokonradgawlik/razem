@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { accountExportSchema, apiErrorSchema, SYNC_ACCOUNT_HEADER } from '@razem/contracts';
+import { accountExportSchema, apiErrorSchema, NOTIFICATION_SETTINGS_HEADER, SYNC_ACCOUNT_HEADER } from '@razem/contracts';
 import { RecordRepository, SNAPSHOT_ORDER } from '@razem/db';
 import type { Database } from '@razem/db';
+import { settingsForClient } from './settings.js';
 import type { AuthService } from './auth/service.js';
 
 export function registerExport(app: FastifyInstance, database: Database, auth: AuthService) {
@@ -14,7 +15,7 @@ export function registerExport(app: FastifyInstance, database: Database, auth: A
     const data = database.sqlite.transaction(() => accountExportSchema.parse({
       format: 'razem-account', formatVersion: 1, exportedAt: new Date().toISOString(),
       account: { id: user.id, householdId: user.householdId, login: user.login, displayName: user.displayName },
-      settings: auth.accounts.settings(user),
+      settings: settingsForClient(auth.accounts.settings(user), request.headers[NOTIFICATION_SETTINGS_HEADER] === '1'),
       records: SNAPSHOT_ORDER.flatMap((type) => records.list({ userId: user.id, householdId: user.householdId }, type, { includeDeleted: true })),
     }))();
     reply.header('Content-Disposition', 'attachment; filename="razem-konto.json"');

@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { apiErrorSchema, householdSchema, loginRequestSchema, meResponseSchema, passwordChangeRequestSchema, settingsPatchSchema, settingsSchema, SYNC_ACCOUNT_HEADER } from '@razem/contracts';
+import { apiErrorSchema, householdSchema, loginRequestSchema, meResponseSchema, passwordChangeRequestSchema, settingsPatchSchema, settingsSchema, NOTIFICATION_SETTINGS_HEADER, SYNC_ACCOUNT_HEADER } from '@razem/contracts';
+import { settingsForClient } from '../settings.js';
 import { AuthError, publicUser } from './service.js';
 import type { AuthService, Authenticated } from './service.js';
 
@@ -92,6 +93,7 @@ export function registerAuth(app: FastifyInstance, options: HttpAuthOptions) {
     if (!body.success) return fail(reply, 400, 'invalid_request');
     try {
       const { token, user } = await service.login(body.data.login, body.data.password, request.ip);
+      service.detachPushForReplacedSession(readCookie(request.headers.cookie, cookieName));
       setSession(reply, token);
       return me({ user });
     } catch (error) { return authError(reply, error); }
@@ -120,12 +122,12 @@ export function registerAuth(app: FastifyInstance, options: HttpAuthOptions) {
   // Bound to the account of this request, including when another tab changed the cookie.
   app.get('/api/settings', async (request, reply) => {
     if (request.headers[SYNC_ACCOUNT_HEADER] !== request.auth!.user.id) return fail(reply, 409, 'account_mismatch');
-    return settingsSchema.parse(service.accounts.settings(request.auth!.user));
+    return settingsSchema.parse(settingsForClient(service.accounts.settings(request.auth!.user), request.headers[NOTIFICATION_SETTINGS_HEADER] === '1'));
   });
   app.patch('/api/settings', { bodyLimit: 4096 }, async (request, reply) => {
     if (request.headers[SYNC_ACCOUNT_HEADER] !== request.auth!.user.id) return fail(reply, 409, 'account_mismatch');
     const patch = settingsPatchSchema.safeParse(request.body);
     if (!patch.success) return fail(reply, 400, 'invalid_request');
-    return settingsSchema.parse(service.accounts.updateSettings(request.auth!.user, patch.data, new Date().toISOString()));
+    return settingsSchema.parse(settingsForClient(service.accounts.updateSettings(request.auth!.user, patch.data, new Date().toISOString()), request.headers[NOTIFICATION_SETTINGS_HEADER] === '1'));
   });
 }

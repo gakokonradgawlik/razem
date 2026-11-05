@@ -130,3 +130,20 @@ login i deviceId, pełne wpisy kolejki z kolejnością/patchami/baseVersion/ID m
 rekordy lokalne powiązane z intencjami, ich bazy oraz pełne konflikty z oboma stanami
 i odrzuconymi intencjami. To atomowy odczyt bez sieci i bez kasowania. Nie jest
 endpointem importu ani backupem serwera. Implementacja: `LocalStore.exportPending`.
+
+
+## Web Push i zgodność ustawień — RAZ-12
+
+Strict kontrakty online subskrypcji, konfiguracji i stanu znajdują się w
+`packages/contracts/src/push.ts`. Wszystkie operacje wymagają sesji i nagłówka konta;
+mutacje podlegają CSRF. Nie zmieniają koperty sync v2 ani Dexie v2. SQLite v5 dodaje
+sesyjne powiązanie subskrypcji i trwałą kolejkę; bez edycji migracji v1–v4.
+SQLite v6 dodaje serwerowe `actor_id` w journalu i zdarzeniach zadań oraz
+`previous_assignee` w zdarzeniach. Nie są częścią odpowiedzi sync/API/eksportu;
+payloady pozostają zgodne. Szczegóły filtrowania odbiorców i migracji: [push.md](push.md).
+
+Ustawienia konta rozszerzają `notifications` o opcjonalne `taskReminders` (true),
+`taskReminderTime` (09:00), `taskMinutesBefore` (0, zakres 0–10080) i `taskAssignments`
+(true). Klient żąda tych pól nagłówkiem `x-razem-notifications: 1` na settings/eksport.
+Bez nagłówka odpowiedź ma dotychczasowe dwa pola, czytelne dla starszej strict PWA.
+Nowy klient akceptuje stary cache offline. Specyfikacja: [push.md](push.md).

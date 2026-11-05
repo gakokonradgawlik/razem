@@ -275,6 +275,13 @@ export class AuthService {
     }
   }
 
+  /** Replacing a browser login must not keep the previous account's push on that browser. */
+  detachPushForReplacedSession(token: string | undefined): void {
+    if (!token || !TOKEN_RE.test(token)) return;
+    const session = this.accounts.sessionByTokenHash(tokenHash(token), this.iso());
+    if (session) this.accounts.database.sqlite.prepare('DELETE FROM push_subscriptions WHERE session_id=?').run(session.id);
+  }
+
   logout(auth: Authenticated): void {
     const at = this.iso();
     this.accounts.transaction(() => {

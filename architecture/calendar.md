@@ -69,8 +69,8 @@ rodzic i konfiguracja nie docierają do partnera w pull, szczegółach ani kalen
 Nowa lokalna kontrola weryfikuje także zgodność targetType z rodzicem oraz ukrywa
 dzieci usuniętych/niedostępnych rodziców.
 
-RAZ-12 dostarczy worker/push, anulowanie i deduplikację dispatch; w RAZ-9 zapisuje się
-konfiguracja, interfejs jasno informuje, że powiadomienia nie są jeszcze wysyłane.
+RAZ-12 dostarcza worker/push, anulowanie i deduplikację dispatch. Ustawienie zapisane
+offline wymaga synchronizacji i świadomego opt-in urządzenia; szczegóły: [push.md](push.md).
 Brak obietnicy alarmu offline i brak integracji z Apple/Google Calendar.
 
 ## Weryfikacja

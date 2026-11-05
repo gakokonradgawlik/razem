@@ -66,16 +66,16 @@ describe('migracje', () => {
     db.close();
     const reopened = openDatabase(path);
     cleanup.push(() => reopened.close());
-    expect(migrationStatus(reopened.sqlite).pending).toEqual([2, 3, 4]);
+    expect(migrationStatus(reopened.sqlite).pending).toEqual([2, 3, 4, 5, 6]);
     const backup = join(dir, 'pre-v1.sqlite');
     const result = migrate(reopened.sqlite, { backupPath: (v) => join(dir, `pre-v${v}.sqlite`) });
-    expect(result).toEqual({ applied: [2, 3, 4], backup });
+    expect(result).toEqual({ applied: [2, 3, 4, 5, 6], backup });
     expect(statSync(backup).mode & 0o777).toBe(0o600);
     expect(reopened.sqlite.prepare('SELECT id, login FROM users ORDER BY login').all()).toEqual([{ id: A, login: 'a@example.test' }, { id: B, login: 'b@example.test' }]);
     expect(reopened.sqlite.prepare('SELECT user_id FROM sessions').get()).toEqual({ user_id: A });
     expect(reopened.sqlite.pragma('foreign_key_check')).toEqual([]);
     expect(reopened.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
-    expect((reopened.sqlite.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: number }>).map((r) => r.version)).toEqual([1, 2, 3, 4]);
+    expect((reopened.sqlite.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: number }>).map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
     // The member limit survives the upgrade.
     expect(() => reopened.sqlite.prepare('INSERT INTO users VALUES (?, ?, ?, ?, ?, 1, ?, ?)').run(C, H, 'c@example.test', 'Trzecie', HASH, T, T)).toThrow(/member_limit/);
     // The copy is a consistent v1 database with the same rows.
@@ -93,7 +93,7 @@ describe('migracje', () => {
     db.sqlite.prepare("INSERT INTO notes VALUES (?, ?, ?, 'private', 1, ?, ?, NULL, 'Syntetyczna', '')").run(N, H, A, T, T);
     db.sqlite.prepare("INSERT INTO sync_changes (entity_type, entity_id, household_id, owner_id, visibility, version, changed_at) VALUES ('note', ?, ?, ?, 'private', 1, ?)").run(N, H, A, T);
     const result = migrate(db.sqlite, { backupPath: (v) => join(dir, `pre-v${v}.sqlite`) });
-    expect(result.applied).toEqual([3, 4]);
+    expect(result.applied).toEqual([3, 4, 5, 6]);
     expect(db.sqlite.prepare('SELECT id, version FROM notes').all()).toEqual([{ id: N, version: 1 }]);
     expect(db.sqlite.prepare('SELECT count(*) AS n FROM sync_changes').get()).toEqual({ n: 1 });
     const state = db.sqlite.prepare('SELECT cursor_key, journal_floor FROM sync_state').all() as Array<{ cursor_key: string; journal_floor: number }>;
@@ -209,7 +209,7 @@ it('v3 → v4 zachowuje szablony, ukończenia i journal; nowe zdarzenia są bez 
   db.sqlite.prepare("INSERT INTO task_occurrences VALUES (?, ?, ?, 'shared', 2, ?, ?, NULL, ?, '2026-01-31', ?)").run(B, H, A, T, T, C, T);
   db.sqlite.prepare("INSERT INTO sync_changes(entity_type,entity_id,household_id,owner_id,visibility,version,changed_at) VALUES ('task',?,?,?,'shared',7,?)").run(C,H,A,T);
   const backup = join(dir, 'pre-v3.sqlite');
-  expect(migrate(db.sqlite, { backupPath: () => backup })).toEqual({ applied: [4], backup });
+  expect(migrate(db.sqlite, { backupPath: () => backup })).toEqual({ applied: [4, 5, 6], backup });
   expect(db.sqlite.prepare('SELECT version, recurrence FROM tasks').get()).toEqual({ version: 7, recurrence: JSON.stringify({ frequency: 'monthly', interval: 1, startDate: '2026-01-31' }) });
   expect(db.sqlite.prepare('SELECT version, completed_at FROM task_occurrences').get()).toEqual({ version: 2, completed_at: T });
   expect(db.sqlite.prepare('SELECT count(*) n FROM sync_changes').get()).toEqual({ n: 1 });
@@ -244,4 +244,42 @@ it('niespójne FK w snapshotcie blokuje migrację przed SQL; nie pozostawia bł�
   expect(existsSync(backup)).toBe(false);
   expect(migrationStatus(db.sqlite).current).toBe(3);
   expect(db.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'task_events'").get()).toBeUndefined();
+});
+
+it('v4 → v5 zachowuje domenę, sesje i preferencje; unieważnia niesprawdzone stare subskrypcje i pusty szkielet dispatch', () => {
+  const { db, dir } = tempDb(); migrate(db.sqlite, { list: migrations.slice(0, 4) }); seedAccounts(db);
+  db.sqlite.prepare("INSERT INTO notes VALUES (?,?,?,'private',1,?,?,NULL,'SECRET','')").run(C, H, A, T, T);
+  db.sqlite.prepare("INSERT INTO preferences VALUES (?,'Europe/Warsaw','dark',1,1,1,?)").run(A, T);
+  db.sqlite.prepare("INSERT INTO devices VALUES (?,?,'Test',?,?)").run(C, A, T, T);
+  db.sqlite.prepare("INSERT INTO push_subscriptions VALUES (?,?,?,'https://web.push.apple.com/legacy','synthetic','synthetic',NULL,?)").run(C, A, C, T);
+  const before = db.sqlite.prepare('SELECT * FROM notes').all();
+  const backup = join(dir, 'pre-v4.sqlite'); expect(migrate(db.sqlite, { backupPath: () => backup })).toEqual({ applied: [5, 6], backup });
+  expect(db.sqlite.prepare('SELECT * FROM notes').all()).toEqual(before);
+  expect(db.sqlite.prepare('SELECT count(*) n FROM sessions').get()).toEqual({ n: 1 });
+  expect(db.sqlite.prepare('SELECT include_titles,shopping_notifications,task_reminders,task_reminder_time,task_minutes_before FROM preferences').get())
+    .toEqual({ include_titles: 1, shopping_notifications: 1, task_reminders: 1, task_reminder_time: '09:00', task_minutes_before: 0 });
+  expect(db.sqlite.prepare('SELECT count(*) n FROM push_subscriptions').get()).toEqual({ n: 0 });
+  expect(db.sqlite.pragma('foreign_key_check')).toEqual([]); expect(db.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
+});
+
+it('v5 → v6 zachowuje rekordy, kolejkę, sesje i checkpoint; nie zgaduje autora historycznych zdarzeń', () => {
+  const { db, dir } = tempDb(); migrate(db.sqlite, { list: migrations.slice(0, 5) }); seedAccounts(db);
+  db.sqlite.prepare("INSERT INTO tasks VALUES (?,?,?,'shared',1,?,?,NULL,'Zadanie','','both',NULL,NULL,'Europe/Warsaw',NULL,NULL)").run(C,H,A,T,T);
+  db.sqlite.prepare("INSERT INTO task_events(task_id,entity_id,version,kind,household_id,owner_id,visibility,changed_at) VALUES (?,?,1,'task.assigned',?,?,'shared',?)").run(C,C,H,A,T);
+  db.sqlite.prepare("INSERT INTO sync_changes(entity_type,entity_id,household_id,owner_id,visibility,version,changed_at) VALUES ('task',?,?,?,'shared',1,?)").run(C,H,A,T);
+  db.sqlite.prepare("INSERT INTO devices VALUES (?,?,'Test',?,?)").run(C,A,T,T);
+  db.sqlite.prepare("INSERT INTO push_subscriptions VALUES (?,?,?,'https://web.push.apple.com/synthetic','synthetic','synthetic',NULL,?,?)").run(C,A,C,T,C);
+  db.sqlite.prepare("INSERT INTO reminder_dispatches(id,subscription_id,user_id,target_type,target_id,kind,event_sequence,deduplication_key,scheduled_at,state,next_attempt_at) VALUES (?,?,?,'task',?,'assignment',1,'synthetic',?,'pending',?)").run(C,C,A,C,T,T);
+  db.sqlite.exec('UPDATE worker_state SET task_sequence=1,shopping_sequence=1');
+  const tables = ['tasks', 'push_subscriptions', 'sessions', 'reminder_dispatches', 'worker_state'];
+  const before = tables.map((table) => db.sqlite.prepare(`SELECT * FROM ${table}`).all());
+  const backup = join(dir, 'pre-v5.sqlite'); expect(migrate(db.sqlite, { backupPath: () => backup })).toEqual({ applied: [6], backup });
+  expect(tables.map((table) => db.sqlite.prepare(`SELECT * FROM ${table}`).all())).toEqual(before);
+  expect(db.sqlite.prepare('SELECT actor_id,previous_assignee FROM task_events').get()).toEqual({ actor_id: null, previous_assignee: null });
+  expect(db.sqlite.prepare('SELECT actor_id FROM sync_changes').get()).toEqual({ actor_id: null });
+  expect(() => db.sqlite.prepare("UPDATE task_events SET previous_assignee='unknown'").run()).toThrow(/CHECK/);
+  expect(() => db.sqlite.prepare("UPDATE sync_changes SET actor_id='unknown'").run()).toThrow(/FOREIGN KEY/);
+  expect(db.sqlite.pragma('foreign_key_check')).toEqual([]); expect(db.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
+  const snapshot = openDatabase(backup); cleanup.push(() => snapshot.close());
+  expect(migrationStatus(snapshot.sqlite).current).toBe(5);
 });

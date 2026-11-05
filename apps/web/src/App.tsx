@@ -20,6 +20,7 @@ import {
 } from './screens/More.js';
 import { InstallScreen, SettingsScreen, ProfileScreen, NotificationsScreen } from './screens/Settings.js';
 import { ChangePasswordScreen, LoginScreen } from './screens/Auth.js';
+import { PushLinkScreen, usePushPermissionMonitor } from './push.js';
 import { ChangesScreen, ConflictScreen, changePaths } from './screens/Changes.js';
 
 type Tab = 'today' | 'shopping' | 'tasks' | 'calendar' | 'more';
@@ -34,6 +35,7 @@ export const tabs: { id: Tab; label: string; icon: IconName; path: string }[] = 
 ];
 
 export const routes: Route[] = [
+  { path: '/powiadomienie/:type/:id', title: 'Powiadomienie', tab: 'today', screen: PushLinkScreen },
   { path: '/', title: 'Dzisiaj', tab: 'today', screen: TodayScreen },
   { path: '/zakupy', title: 'Zakupy', tab: 'shopping', screen: ShoppingScreen },
   { path: '/zakupy/nowa', title: 'Nowa lista', tab: 'shopping', screen: NewShoppingListScreen },
@@ -89,6 +91,7 @@ export function findRoute(path: string): [Route, Params] {
 
 export function App({ services = unavailableServices }: { services?: AppServices }) {
   const path = usePath();
+  usePushPermissionMonitor(services.settings?.userId);
   const pwa = usePwaState();
   const [route, params] = findRoute(path);
   useTheme();

@@ -8,7 +8,7 @@ ekranów — listy, szczegóły, edycja, zawartość list zakupów. RAZ-5: prawd
 lokalna baza IndexedDB per konto (Dexie), kolejka zmian, synchronizacja aktywnej aplikacji,
 konflikty, eksport niewysłanych zmian i wylogowanie. RAZ-6: instalacja PWA, lokalny shell
 offline i aktualizacje po zamknięciu wszystkich okien aplikacji. RAZ-8: zadania i przypisania, filtry oraz powtarzalne obowiązki z historią i ukończeniami
-poszczególnych terminów. RAZ-9: agenda i miesiąc z wydarzeniami wielodniowymi, strefami IANA i corocznymi ważnymi datami. Opcjonalne ustawienie przypomnienia zapisuje się offline; wysyłkę dostarczy RAZ-12.
+poszczególnych terminów. RAZ-9: agenda i miesiąc z wydarzeniami wielodniowymi, strefami IANA i corocznymi ważnymi datami. Opcjonalne ustawienie przypomnienia zapisuje się offline. RAZ-12 dodaje Web Push/VAPID, świadomy opt-in i trwały worker SQLite.
 
 Zadania działają lokalnie i synchronizują się z drugim kontem. Wspólne zadania można
 przypisać sobie, drugiej osobie lub obojgu; prywatne tylko sobie. Zadanie cykliczne
@@ -19,7 +19,7 @@ bez usuwania wcześniejszych zaległości. Zobacz [architecture/tasks.md](archit
 Po aktualizacji z wersji sprzed RAZ-8 stara PWA pokaże potrzebę aktualizacji sync:
 zapisz formularze, zamknij wszystkie okna Razem i otwórz ponownie. Oczekujące zmiany
 pozostają. Sync używa v2, health v1; migracja SQLite v4 dodaje wyłącznie zdarzenia
-zadań dla przyszłego workera. Nie uruchamia wysyłania powiadomień.
+zadań. RAZ-12 rozszerza SQLite do v6 i dostarcza worker powiadomień.
 
 Kalendarz pokazuje wydarzenia i ważne daty w agendzie oraz miesiącu (tydzień od
 poniedziałku). Kliknij dzień miesiąca, aby wyświetlić jego wpisy. „Agenda od dnia”
@@ -145,7 +145,9 @@ sesji (401); dane domenowe wyłącznie przez `/api/sync/push` i `/api/sync/pull`
 (RAZ-4, opis w architecture/sync.md). Nagłówki typu `x-user-id` ani deviceId nie nadają uprawnień.
 Za reverse proxy ustaw `RAZEM_PUBLIC_ORIGIN` (dokładny origin HTTPS) i ewentualnie
 `RAZEM_TRUST_PROXY`.
-Worker na razie utrzymuje połączenie i obsługuje zakończenie procesu; niczego nie wysyła.
+Worker planuje przypomnienia oraz przypisania zadań i opcjonalne zmiany zakupów.
+Wysyła je po konfiguracji VAPID i świadomym opt-in na urządzeniu; patrz
+[architecture/push.md](architecture/push.md).
 
 `deploy/compose.yaml` definiuje app + worker i lokalny wolumen SQLite; host port
 jest ograniczony do loopback, domyślnie 3100 (`RAZEM_PORT`). Obraz bazowy ma dokładną
@@ -160,7 +162,7 @@ Nie uruchamiaj `down -v` na instalacji z danymi. Nie używamy Vite preview w pro
 | --- | --- |
 | `apps/web` | React/Vite; `src/offline/` – lokalna baza, komendy, kolejka, silnik sync, konto |
 | `apps/server` | Fastify, health/readiness, sesje/auth, CLI `admin`, pliki web |
-| `apps/worker` | osobny proces przypomnień — na razie lifecycle |
+| `apps/worker` | osobny proces przypomnień i trwały dispatch SQLite |
 | `packages/contracts` | Zod i typy TS, daty, prywatność, sync v1 |
 | `packages/db` | SQLite WAL, migracje, schemat Drizzle, repozytoria i serwis uprawnień |
 | `tests/e2e` | rzeczywisty HTTP i render buildu w przeglądarkach |
@@ -191,7 +193,7 @@ domu. Zapis profilu/strefy i preferencji powiadomień wymaga serwera; ostatnie
 ustawienia są dostępne po restarcie offline. Motyw zapisuje się na urządzeniu.
 Zmiana strefy nie przesuwa istniejących terminów. Eksport konta (RAZ-13) pobiera JSON
 własnych i wspólnych danych z serwera; osobny eksport pending/konfliktów działa offline.
-Wysyłka powiadomień pozostaje zakresem RAZ-12. Kosz, konflikty, instalacja i wylogowanie są dostępne.
+Wysyłka powiadomień jest dostępna po konfiguracji VAPID i opt-in urządzenia (RAZ-12). Kosz, konflikty, instalacja i wylogowanie są dostępne.
 Szczegóły: [architecture/today-settings.md](architecture/today-settings.md),
 dowody: [quality/raz-11.md](quality/raz-11.md).
 
@@ -210,3 +212,27 @@ Timer systemd jest dostarczony jako szablon, bez instalowania go na hoście.
 Komendy, konfiguracja/VAPID, RPO 24 h, snapshoty migracji i próba odtworzenia:
 [operations/backup.md](operations/backup.md). Backup serwera nie obejmuje niewysłanych
 zmian ani konfliktów telefonów; ich eksport pobierz osobno w Ustawieniach.
+
+
+## Powiadomienia (RAZ-12)
+
+Ustawienia → Powiadomienia → Włącz powiadomienia. Na iPhonie otwórz aplikację ikoną
+z ekranu początkowego. Nie prosimy o zgodę przy wejściu. Można wyłączyć urządzenie,
+przypomnienia terminów i przypisania zadań oraz zmienić godzinę/wyprzedzenie. Kalendarz
+ma osobne opcjonalne przypomnienia wpisów. Zakupy wymagają dodatkowego przełącznika.
+Domyślnie treść na blokadzie jest ogólna; tytuły wymagają świadomej zgody w ustawieniach.
+
+App i worker potrzebują jednej stałej pary VAPID i subject: `VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Nazwy są w `.env.example`; prawdziwe wartości
+przechowuj w chronionej konfiguracji poza Git. Bez konfiguracji push jest wyłączony.
+Logout, zmiana konta i odwołanie sesji odpinają powiązanie; ponowne włączenie jest jawne.
+
+Nie ma gwarancji alarmu offline ani cichej synchronizacji zamkniętej PWA. Fizyczne
+wysłanie na zamkniętą PWA iPhone po HTTPS pozostaje do testu w RAZ-16.
+Kontrakty, migracje SQLite v5/v6, lease/retry, granica możliwego ponownego dostarczenia
+oraz konfiguracja: [architecture/push.md](architecture/push.md). Dowody:
+[quality/raz-12.md](quality/raz-12.md).
+
+Testy push używają dwóch dodatkowych izolowanych serwerów na 127.0.0.1:4324/4325
+z syntetyczną parą VAPID generowaną w pamięci. Systemowe API przeglądarki są w tych
+testach symulowane; HTTP/sesje/SQLite są rzeczywiste. Serwery i bazy znikają po teście.

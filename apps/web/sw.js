@@ -35,3 +35,25 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(caches.open(CACHE).then(async (cache) =>
     (await cache.match(asset)) ?? Response.error()));
 });
+
+// Every push results in a visible notification; never a silent background sync.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data?.json() ?? {}; } catch { /* malformed payload still shows a generic notification */ }
+  const url = typeof data.url === 'string' && /^\/powiadomienie\/(task|calendar_event|important_date|shopping_list|shopping_item)\/[0-9a-f-]{36}$/.test(data.url) ? data.url : '/';
+  event.waitUntil(self.registration.showNotification('Razem', {
+    body: typeof data.body === 'string' && data.body ? data.body.slice(0, 200) : 'Masz przypomnienie w Razem',
+    tag: typeof data.tag === 'string' ? data.tag : 'razem', data: { url }, icon: '/icon-192.png',
+  }));
+});
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const path = event.notification.data?.url;
+  const url = new URL(typeof path === 'string' && /^\/powiadomienie\/(task|calendar_event|important_date|shopping_list|shopping_item)\/[0-9a-f-]{36}$/.test(path) ? path : '/', self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const client = windows.find((c) => new URL(c.url).origin === self.location.origin);
+    if (client) { await client.navigate(url); await client.focus(); }
+    else await self.clients.openWindow(url);
+  })());
+});

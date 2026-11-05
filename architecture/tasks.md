@@ -69,13 +69,16 @@ Migracja SQLite v4 dodaje serwerową tabelę `task_events`, poza sync i API. Rep
 zapisuje ją w tej samej transakcji co domenę/journal/receipt: task.created, task.assigned,
 task.schedule_changed, task.completed/reopened, task.deleted/restored. Identyfikacja:
 sequence, taskId, entityId, version, occurrenceKey, changedAt oraz ACL szablonu.
-Unikalność `(entity_id, version, kind)`; brak tytułów, opisów i subskrypcji. Nie ma push
-z UI ani działającego dispatchera. Purge szablonu usuwa jego zdarzenia przez FK.
+Unikalność `(entity_id, version, kind)`; brak tytułów, opisów i subskrypcji. Nie ma wysyłki push
+z UI; dispatcher działa od RAZ-12 ([push.md](push.md)). Purge szablonu usuwa jego zdarzenia przez FK.
 
-Worker RAZ-12 musi zachować trwały checkpoint, odczytać aktualny szablon i ukończenia,
-ponownie sprawdzić ACL/stan/przypisanie, planować/anulować dispatch z deduplikacją i
-wykonać skan istniejących zadań na starcie (migracja nie dopisuje historycznych zdarzeń).
-`taskRecipients` wyznacza odbiorców z zaufanej listy kont tego gospodarstwa; private
-zawsze tylko owner. `taskReminderAt`: o godzinie terminu albo 09:00 lokalnie dla dnia;
-`taskOccurrence`, `nextTaskOccurrence`, `taskOverdue` są wspólne. Brak obietnicy alarmu
-offline i działania zamkniętej PWA. Dowody: `quality/raz-8.md`.
+Worker RAZ-12 zachowuje trwały checkpoint, skanuje także starsze szablony bez zdarzeń,
+odczytuje aktualne ukończenia i ponownie sprawdza ACL/stan/przypisanie przed wysyłką.
+Dedup per urządzenie, lease, retry i anulowanie: [push.md](push.md).
+Domyślnie przypomina o godzinie terminu albo o 09:00 dla dnia; ustawienia konta
+pozwalają wyłączyć i zmienić godzinę/wyprzedzenie oraz wyłączyć przypisania.
+Prywatne przypomnienie trafia tylko do właściciela. Brak gwarancji alarmu offline.
+SQLite v6 dopisuje do zdarzeń autora z sesji i poprzednie przypisanie, atomowo z mutacją.
+Push o przypisaniu otrzymują tylko nowo dodane osoby poza autorem czynności;
+`owner_id` nadal oznacza właściciela rekordu. Zdarzenia historyczne bez autora są pomijane.
+Dowody RAZ-8: `quality/raz-8.md`; worker/push: [quality/raz-12.md](../quality/raz-12.md).

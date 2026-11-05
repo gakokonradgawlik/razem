@@ -134,14 +134,14 @@ export class RecordRepository {
       .map((row) => this.toRecord(type, row));
   }
 
-  private journal(record: Pick<SyncRecord, 'entityType' | 'id' | 'householdId' | 'ownerId' | 'visibility' | 'version' | 'updatedAt'>) {
+  private journal(record: Pick<SyncRecord, 'entityType' | 'id' | 'householdId' | 'ownerId' | 'visibility' | 'version' | 'updatedAt'>, actorId: string | null = null) {
     this.database.db.insert(syncChanges).values({
       entityType: record.entityType, entityId: record.id, householdId: record.householdId, ownerId: record.ownerId,
-      visibility: record.visibility, version: record.version, changedAt: record.updatedAt,
+      visibility: record.visibility, version: record.version, changedAt: record.updatedAt, actorId,
     }).run();
   }
 
-  private taskEvent(record: SyncRecord, before?: SyncRecord) {
+  private taskEvent(record: SyncRecord, actorId: string, before?: SyncRecord) {
     if (record.entityType !== 'task' && record.entityType !== 'task_occurrence') return;
     const task = record.entityType === 'task' ? record : this.find({ householdId: record.householdId, userId: record.ownerId }, 'task', record.data.taskId);
     if (!task || task.entityType !== 'task') return;
@@ -158,7 +158,8 @@ export class RecordRepository {
       kinds.push(record.data.completedAt ? 'task.completed' : 'task.reopened');
     for (const kind of kinds) this.database.db.insert(taskEvents).values({ taskId: task.id, entityId: record.id,
       version: record.version, kind, occurrenceKey: record.entityType === 'task_occurrence' ? record.data.occurrenceKey : null,
-      householdId: task.householdId, ownerId: task.ownerId, visibility: task.visibility, changedAt: record.updatedAt }).run();
+      householdId: task.householdId, ownerId: task.ownerId, visibility: task.visibility, changedAt: record.updatedAt,
+      actorId, previousAssignee: before?.entityType === 'task' ? before.data.assignee : null }).run();
   }
 
   /** Purged IDs: readable ones answer with the tombstone, others like a missing record. */
@@ -222,8 +223,8 @@ export class RecordRepository {
         if (isConstraintError(error)) return invalid;
         throw error;
       }
-      this.journal(record);
-      this.taskEvent(record);
+      this.journal(record, scope.userId);
+      this.taskEvent(record, scope.userId);
       return { status: 'ack', record } as const;
     }, { behavior: 'immediate' });
   }
@@ -258,8 +259,8 @@ export class RecordRepository {
       }
       if (updated.changes !== 1) return { status: 'conflict', record: current } as const;
       const record = this.find(scope, type.data, current.id)!;
-      this.journal(record);
-      this.taskEvent(record, current);
+      this.journal(record, scope.userId);
+      this.taskEvent(record, scope.userId, current);
       return { status: 'ack', record } as const;
     }, { behavior: 'immediate' });
   }

@@ -4,6 +4,7 @@
     "@razem/contracts": "0.1.0",
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.4",
+    "web-push": "3.6.7",
     "zod": "4.6.7"
   },
   "version": "0.1.0",

@@ -41,7 +41,10 @@ export function LoginScreen() {
     setBusy(true);
     try {
       const result = await services.login({ login: values.login.trim(), password: values.password });
-      if (result.ok) navigate('/', { replace: true });
+      if (result.ok) {
+        const target = new URLSearchParams(window.location.search).get('powiadomienie');
+        navigate(target && /^\/powiadomienie\/(task|calendar_event|important_date|shopping_list|shopping_item)\/[0-9a-f-]{36}$/.test(target) ? target : '/', { replace: true });
+      }
       else setFailure(failureMessage(result));
     } catch { setFailure('Nie udało się zalogować. Spróbuj ponownie.'); } finally { setBusy(false); }
   };

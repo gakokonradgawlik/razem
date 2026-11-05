@@ -9,10 +9,13 @@ import type { AuthConfig } from './auth/service.js';
 import { registerSync } from './sync/http.js';
 import { SyncService } from './sync/service.js';
 import type { SyncConfig } from './sync/service.js';
+import { registerPush } from './push.js';
+import type { Vapid } from '@razem/db';
 import { registerExport } from './export.js';
 
 export interface AppOptions {
   database: Database;
+  vapid?: Vapid;
   webRoot?: string;
   auth?: Partial<AuthConfig>;
   /** Defaults to true; only a non-production dev server may set false. */
@@ -68,6 +71,7 @@ export async function buildApp(options: AppOptions) {
   });
   registerSync(app, sync);
   registerExport(app, options.database, auth);
+  registerPush(app, options.database, options.vapid);
   app.all('/api/*', async (_request, reply) => reply.code(404).send(apiErrorSchema.parse({ error: 'not_found' })));
   app.setErrorHandler((error, _request, reply) => {
     const status = typeof error === 'object' && error !== null && 'statusCode' in error && typeof error.statusCode === 'number' ? error.statusCode : 500;

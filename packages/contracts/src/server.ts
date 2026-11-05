@@ -21,9 +21,14 @@ export const syncChangeSchema = z.strictObject({
   entityType: entityTypeSchema,
 });
 export const storedTombstoneSchema = metadataSchema.extend({ entityType: entityTypeSchema, deletedAt: instantSchema });
+/** SQLite v5 queue projection; the old reminder-only scaffold is no longer used. */
 export const dispatchSchema = z.strictObject({
-  id: idSchema, reminderId: idSchema, userId: idSchema,
-  deduplicationKey: z.string().min(1).max(512), scheduledAt: instantSchema,
-  state: z.enum(['pending', 'processing', 'sent', 'failed']), attempts: z.number().int().nonnegative(),
-  nextAttemptAt: instantSchema.nullable(), leaseUntil: instantSchema.nullable(), sentAt: instantSchema.nullable(),
+  id: idSchema, subscriptionId: idSchema, userId: idSchema,
+  targetType: z.enum(['task', 'calendar_event', 'important_date', 'shopping_list', 'shopping_item']),
+  targetId: idSchema, kind: z.enum(['reminder', 'assignment', 'shopping']),
+  eventSequence: z.number().int().positive().nullable(),
+  deduplicationKey: z.string().regex(/^[a-f0-9]{64}$/), scheduledAt: instantSchema,
+  state: z.enum(['pending', 'processing', 'sent', 'failed', 'cancelled']), attempts: z.number().int().nonnegative(),
+  nextAttemptAt: instantSchema, leaseUntil: instantSchema.nullable(),
+  leaseToken: idSchema.nullable(), sentAt: instantSchema.nullable(),
 });

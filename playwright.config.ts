@@ -11,7 +11,11 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'webkit', use: { ...devices['iPhone 13'], defaultBrowserType: 'webkit' } },
   ],
-  webServer: [...[4322, 4323].map((port) => ({
+  webServer: [...[4324, 4325].map((port) => ({
+    command: `node tests/start-sync-server.mjs --push ${port}`,
+    url: `http://127.0.0.1:${port}/readyz`, reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 5000 },
+  })), ...[4322, 4323].map((port) => ({
     command: `node tests/start-sync-server.mjs --port ${port}`,
     url: `http://127.0.0.1:${port}/readyz`,
     reuseExistingServer: false,

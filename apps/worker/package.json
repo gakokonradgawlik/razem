@@ -1,6 +1,7 @@
 {
   "name": "@razem/worker",
   "dependencies": {
+    "@js-temporal/polyfill": "0.5.1",
     "@razem/contracts": "0.1.0",
     "@razem/db": "0.1.0"
   },
