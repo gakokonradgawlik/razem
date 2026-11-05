@@ -36,3 +36,15 @@ Pokaż ostatnią synchronizację i ostrzeżenie o niewysłanych zmianach przed w
 - Motyw: preferencja urządzenia w `localStorage` (`razem:theme`), stosowana przed renderem. Rozmiar tekstu: `font: -apple-system-body` (Dynamic Type) i jednostki rem.
 - Safe area: `env(safe-area-inset-*)` w pasku, treści, pasku formularza i ekranie logowania. Klawiatura: `visualViewport` → `--keyboard-inset` i `data-keyboard="open"` (ukrywa dolny pasek podczas edycji; pinch-zoom bez edycji ignorowany).
 - Poza zakresem RAZ-3: manifest i ikony PNG 180/192/512/maskable, Service Worker (zadanie PWA); faktyczny magazyn wpisów i outbox (RAZ-5); odhaczanie pojedynczych terminów zadań powtarzanych (`task_occurrence`), przywracanie z kosza, udostępnienie kopii notatki, przypomnienia, konflikty i eksport (moduły funkcjonalne). Ekran Dzisiaj nie agreguje jeszcze wpisów.
+
+## Zakupy po RAZ-7
+
+Zakupy korzystają z rzeczywistego command/local/sync layer podłączonego w RAZ-5,
+z zimnym startem offline z RAZ-6. Na ekranie listy jest pole „Nazwa produktu”
+z przyciskiem „Dodaj” i obsługą Enter, bez opuszczania listy; „Dodaj pozycję”
+otwiera formularz z ilością i uwagą. Błąd zapisu zachowuje treść. Cele dotykowe
+pozostają co najmniej 44 px, a etykieta zakresu listy jest widoczna przed dopisaniem.
+Kosz obsługuje pojedyncze pozycje i listy; najpierw przywraca się usuniętą listę.
+Odhaczanie/Cofnij nie zmienia kolejności sortKey/UUID. Szczegóły:
+[architecture/shopping.md](../architecture/shopping.md), dowody:
+[quality/raz-7.md](../quality/raz-7.md).
