@@ -209,3 +209,13 @@ Ekran instalacji rozpoznaje standalone, prowadzi po krokach iPhone i pokazuje go
 Pierwsze uruchomienie ikoną, logowanie i bootstrap wymagają połączenia. Wynik persist jest
 widoczny (także odmowa/brak wsparcia/błąd); ochrona magazynu nie zastępuje backupu/eksportu.
 Dowody i lista fizycznych testów oczekujących po wdrożeniu: `quality/raz-6.md`.
+
+## Kalendarz — RAZ-9
+
+Bez zmiany koperty sync v2 ani schematów. Komenda `LocalStore.saveCalendar` zapisuje
+w jednej transakcji lokalnego rodzica, konfigurację reminder i obie intencje outbox.
+Edycja zawiera tylko zmienione pola; niezmienione przypomnienie pozostaje nietknięte.
+Parent reminder ma sprawdzany targetType i ACL; lokalne odczyty ukrywają przypomnienie
+usuniętego/niedostępnego rodzica. Zależności push, receipt, konflikty i kolejność ACK
+pozostają zgodne z mechanizmem bazowym. Reguły czasu oraz granice przyszłego workera:
+[calendar.md](calendar.md).

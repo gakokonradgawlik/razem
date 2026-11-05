@@ -8,7 +8,7 @@ ekranów — listy, szczegóły, edycja, zawartość list zakupów. RAZ-5: prawd
 lokalna baza IndexedDB per konto (Dexie), kolejka zmian, synchronizacja aktywnej aplikacji,
 konflikty, eksport niewysłanych zmian i wylogowanie. RAZ-6: instalacja PWA, lokalny shell
 offline i aktualizacje po zamknięciu wszystkich okien aplikacji. RAZ-8: zadania i przypisania, filtry oraz powtarzalne obowiązki z historią i ukończeniami
-poszczególnych terminów. Przypomnienia mają kolejne zadanie.
+poszczególnych terminów. RAZ-9: agenda i miesiąc z wydarzeniami wielodniowymi, strefami IANA i corocznymi ważnymi datami. Opcjonalne ustawienie przypomnienia zapisuje się offline; wysyłkę dostarczy RAZ-12.
 
 Zadania działają lokalnie i synchronizują się z drugim kontem. Wspólne zadania można
 przypisać sobie, drugiej osobie lub obojgu; prywatne tylko sobie. Zadanie cykliczne
@@ -20,6 +20,13 @@ Po aktualizacji z wersji sprzed RAZ-8 stara PWA pokaże potrzebę aktualizacji s
 zapisz formularze, zamknij wszystkie okna Razem i otwórz ponownie. Oczekujące zmiany
 pozostają. Sync używa v2, health v1; migracja SQLite v4 dodaje wyłącznie zdarzenia
 zadań dla przyszłego workera. Nie uruchamia wysyłania powiadomień.
+
+Kalendarz pokazuje wydarzenia i ważne daty w agendzie oraz miesiącu (tydzień od
+poniedziałku). Kliknij dzień miesiąca, aby wyświetlić jego wpisy. „Agenda od dnia”
+pozwala przeglądać także historię. Całodniowy koniec w formularzu jest wliczony;
+zmiana strefy telefonu nie przesuwa dat. Rok początkowy ważnej daty jest opcjonalny.
+Szczegóły: [architecture/calendar.md](architecture/calendar.md),
+dowody: [quality/raz-9.md](quality/raz-9.md).
 
 ## Instalacja PWA i offline
 

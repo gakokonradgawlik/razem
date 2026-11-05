@@ -105,3 +105,11 @@ Schematy nie dowodzą działającego sync, autoryzacji ani offline PWA. API dany
 jest zamknięte; klient API waliduje żądania/odpowiedzi, ma timeout i zachowuje status
 HTTP, lecz nie uruchamia kolejki. Nie dodano alternatywnego CRUD omijającego sync.
 Realne dwa konta, retry/idempotencja, bootstrap i dirty merge są DoD kolejnych zadań.
+
+## Kalendarz i przypomnienia — RAZ-9
+
+Kształt rekordów/protokół pozostaje bez zmiany. `calendar.ts` eksportuje `eventDays`,
+`importantOccurrence`, `nextImportantOccurrence`, `calendarRecipients`,
+`calendarReminderAt` i stabilne `calendarReminderId`. Reguły zakresu, czasu/ACL
+i granica przyszłego dispatchera: [calendar.md](calendar.md). Zapis konfiguracji
+przypomnienia nie oznacza dostarczenia powiadomienia (RAZ-12).

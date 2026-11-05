@@ -48,3 +48,15 @@ Kosz obsługuje pojedyncze pozycje i listy; najpierw przywraca się usuniętą l
 Odhaczanie/Cofnij nie zmienia kolejności sortKey/UUID. Szczegóły:
 [architecture/shopping.md](../architecture/shopping.md), dowody:
 [quality/raz-7.md](../quality/raz-7.md).
+
+## Kalendarz po RAZ-9
+
+Agenda i miesiąc pokazują lokalne wydarzenia i roczne ważne daty. Agenda ma wybór
+początkowego dnia, miesiąc oznaczenia zajętych dni, listę i wybór dnia (ponowne
+naciśnięcie wraca do listy miesiąca). Przy wpisach widoczność tekstowo; brak danych
+magazynu zgłaszany jako niedostępność. Formularz wydarzenia zawiera strefę IANA,
+a edycja odtwarza godziny w strefie wpisu. Końcowy dzień całodniowego zakresu jest
+wliczony w formularzu. Ważna data nie wymaga roku; gdy rok istnieje, pokazuje licznik.
+Opcjonalne przypomnienie zapisuje się offline, z jawną informacją o braku wysyłki
+powiadomień w tej wersji. Szczegóły: [calendar.md](../architecture/calendar.md),
+dowody: [raz-9.md](../quality/raz-9.md).
