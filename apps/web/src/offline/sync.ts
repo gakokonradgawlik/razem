@@ -7,7 +7,7 @@
 // the session of that same request (409 account_mismatch) — so a queue is never sent with,
 // and a database never filled from, another account's session, even if the cookie changes
 // mid-cycle. stop() (sign-out, account switch) aborts the running cycle.
-import { MAX_PULL_PAGE, MAX_PUSH_BATCH, MAX_PUSH_BYTES } from '@razem/contracts';
+import { PROTOCOL_VERSION, MAX_PULL_PAGE, MAX_PUSH_BATCH, MAX_PUSH_BYTES } from '@razem/contracts';
 import type { MeResponse } from '@razem/contracts';
 import { ApiError } from '../api.js';
 import type { Api } from '../api.js';
@@ -194,7 +194,7 @@ export class SyncEngine {
       await this.store.markAttempt(batch.entries);
       let response;
       try {
-        response = await this.api.push({ protocolVersion: 1, deviceId, mutations: batch.mutations }, this.account, this.abort.signal);
+        response = await this.api.push({ protocolVersion: PROTOCOL_VERSION, deviceId, mutations: batch.mutations }, this.account, this.abort.signal);
       } catch (error) {
         if (error instanceof ApiError && (error.kind === 'payload_too_large' || error.kind === 'invalid_request') && batch.entries.length > 1) {
           this.maxBatch = Math.max(1, Math.floor(batch.entries.length / 2));

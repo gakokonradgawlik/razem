@@ -74,13 +74,13 @@ class Device {
   /** Account the session cookie belongs to (sent as SYNC_ACCOUNT_HEADER, like the PWA does). */
   async accountHeader(): Promise<Record<string, string>> {
     const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie: this.cookie } });
-    return me.statusCode === 200 ? { [SYNC_ACCOUNT_HEADER]: (me.json() as { user: { id: string } }).user.id } : {};
+    return me.statusCode === 200 ? { 'x-razem-protocol': '2', [SYNC_ACCOUNT_HEADER]: (me.json() as { user: { id: string } }).user.id } : {};
   }
   async pushRaw(payload: unknown, headers: Record<string, string> = {}) {
     return app.inject({ method: 'POST', url: '/api/sync/push', headers: { ...json, cookie: this.cookie, ...(await this.accountHeader()), ...headers }, payload: payload as never });
   }
   async push(...mutations: Mut[]): Promise<PushResponse['results']> {
-    const response = await this.pushRaw({ protocolVersion: 1, deviceId: this.deviceId, mutations });
+    const response = await this.pushRaw({ protocolVersion: 2, deviceId: this.deviceId, mutations });
     expect(response.statusCode, response.body).toBe(200);
     return pushResponseSchema.parse(response.json()).results;
   }
@@ -237,7 +237,7 @@ describe('idempotencja i atomowość', () => {
     for (const table of ['mutation_receipts', 'sync_changes']) {
       database.sqlite.exec(`CREATE TEMP TRIGGER fail_${table} BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'synthetic_failure'); END`);
       const mutation = create('note', note(`Awaria ${table}`), 'shared');
-      const failed = await a.pushRaw({ protocolVersion: 1, deviceId: a.deviceId, mutations: [mutation] });
+      const failed = await a.pushRaw({ protocolVersion: 2, deviceId: a.deviceId, mutations: [mutation] });
       expect(failed.statusCode).toBe(500);
       expect(failed.json()).toEqual({ error: 'unavailable' }); // no SQL or content in the body
       expect(count('SELECT count(*) AS n FROM notes WHERE id = ?', mutation.entityId)).toBe(0);
@@ -263,7 +263,7 @@ describe('idempotencja i atomowość', () => {
     database.sqlite.exec('DROP TRIGGER temp.fail_second');
     database.sqlite.exec(`CREATE TEMP TRIGGER fail_receipt BEFORE INSERT ON mutation_receipts BEGIN SELECT RAISE(ABORT, 'synthetic_failure'); END`);
     const third = create('note', note('Trzecia'), 'private');
-    expect((await a.pushRaw({ protocolVersion: 1, deviceId: a.deviceId, mutations: [first, third] })).statusCode).toBe(500);
+    expect((await a.pushRaw({ protocolVersion: 2, deviceId: a.deviceId, mutations: [first, third] })).statusCode).toBe(500);
     database.sqlite.exec('DROP TRIGGER temp.fail_receipt');
     expect((await a.push(first, third)).map((r) => r.status)).toEqual(['ack', 'ack']);
     expect(count('SELECT count(*) AS n FROM notes')).toBe(2);
@@ -273,7 +273,7 @@ describe('idempotencja i atomowość', () => {
     const { a, b } = await devices();
     const mutation = create('note', note('Prywatna A', 'sekret A'), 'private');
     await a.push(mutation);
-    const response = await b.pushRaw({ protocolVersion: 1, deviceId: a.deviceId, mutations: [mutation] });
+    const response = await b.pushRaw({ protocolVersion: 2, deviceId: a.deviceId, mutations: [mutation] });
     expect(response.statusCode).toBe(200);
     // B's own decision: the ID belongs to someone else's private record → not_found, no content.
     expect(pushResponseSchema.parse(response.json()).results[0]).toMatchObject({ status: 'error', code: 'not_found' });
@@ -582,7 +582,7 @@ describe('pull: snapshot, delta, retencja', () => {
 describe('HTTP: 401/403/409/5xx, payload, zgadywanie ID i list_id', () => {
   it('401 bez sesji, 403 CSRF i hasło tymczasowe, 415 typ treści — dla push i pull', async () => {
     const { a } = await devices();
-    const body = { protocolVersion: 1, deviceId: a.deviceId, mutations: [create('note', note('x'), 'private')] };
+    const body = { protocolVersion: 2, deviceId: a.deviceId, mutations: [create('note', note('x'), 'private')] };
     const noSession = await app.inject({ method: 'POST', url: '/api/sync/push', headers: json, payload: body });
     expect([noSession.statusCode, noSession.json()]).toEqual([401, { error: 'authentication_required' }]);
     expect((await app.inject({ method: 'GET', url: '/api/sync/pull' })).statusCode).toBe(401);
@@ -598,7 +598,7 @@ describe('HTTP: 401/403/409/5xx, payload, zgadywanie ID i list_id', () => {
 
   it('409 account_mismatch: żądanie sync musi wskazać konto sesji tego samego żądania', async () => {
     const { a, b } = await devices();
-    const body = { protocolVersion: 1, deviceId: a.deviceId, mutations: [create('note', note('Prywatna A', 'treść A'), 'private')] };
+    const body = { protocolVersion: 2, deviceId: a.deviceId, mutations: [create('note', note('Prywatna A', 'treść A'), 'private')] };
     // Queue of A sent with B's cookie (cookie switched by a sign-in in another tab).
     const pushWithB = await app.inject({ method: 'POST', url: '/api/sync/push', headers: { ...json, cookie: b.cookie, [SYNC_ACCOUNT_HEADER]: A_ID }, payload: body });
     expect([pushWithB.statusCode, pushWithB.json()]).toEqual([409, { error: 'account_mismatch' }]);
@@ -618,15 +618,15 @@ describe('HTTP: 401/403/409/5xx, payload, zgadywanie ID i list_id', () => {
     const ok = create('note', note('Poprawna'), 'private');
     const cases: Array<[unknown, number, string]> = [
       ['{"protocolVersion":1,', 400, 'invalid_request'],
-      [{ protocolVersion: 1, mutations: [ok] }, 400, 'invalid_request'],
-      [{ protocolVersion: 1, deviceId: 'nie-uuid', mutations: [ok] }, 400, 'invalid_request'],
-      [{ protocolVersion: 1, deviceId: a.deviceId, mutations: [] }, 400, 'invalid_request'],
-      [{ protocolVersion: 1, deviceId: a.deviceId, mutations: Array.from({ length: 101 }, () => create('note', note('x'), 'private')) }, 400, 'invalid_request'],
-      [{ protocolVersion: 1, deviceId: a.deviceId, mutations: [ok, ok] }, 400, 'invalid_request'],
-      [{ protocolVersion: 1, deviceId: a.deviceId, mutations: [{ ...ok, clientMutationId: 'x' }] }, 400, 'invalid_request'],
-      [{ protocolVersion: 1, deviceId: a.deviceId, mutations: [ok], ownerId: B_ID }, 400, 'invalid_request'],
-      [{ protocolVersion: 2, deviceId: a.deviceId, mutations: [ok] }, 400, 'upgrade_required'],
-      [{ protocolVersion: 1, deviceId: a.deviceId, mutations: [create('note', note('x'.repeat(200), 'y'.repeat(1_100_000)), 'private')] }, 413, 'payload_too_large'],
+      [{ protocolVersion: 2, mutations: [ok] }, 400, 'invalid_request'],
+      [{ protocolVersion: 2, deviceId: 'nie-uuid', mutations: [ok] }, 400, 'invalid_request'],
+      [{ protocolVersion: 2, deviceId: a.deviceId, mutations: [] }, 400, 'invalid_request'],
+      [{ protocolVersion: 2, deviceId: a.deviceId, mutations: Array.from({ length: 101 }, () => create('note', note('x'), 'private')) }, 400, 'invalid_request'],
+      [{ protocolVersion: 2, deviceId: a.deviceId, mutations: [ok, ok] }, 400, 'invalid_request'],
+      [{ protocolVersion: 2, deviceId: a.deviceId, mutations: [{ ...ok, clientMutationId: 'x' }] }, 400, 'invalid_request'],
+      [{ protocolVersion: 2, deviceId: a.deviceId, mutations: [ok], ownerId: B_ID }, 400, 'invalid_request'],
+      [{ protocolVersion: 99, deviceId: a.deviceId, mutations: [ok] }, 400, 'upgrade_required'],
+      [{ protocolVersion: 2, deviceId: a.deviceId, mutations: [create('note', note('x'.repeat(200), 'y'.repeat(1_100_000)), 'private')] }, 413, 'payload_too_large'],
     ];
     for (const [payload, status, error] of cases) {
       const response = await a.pushRaw(payload);
@@ -688,11 +688,28 @@ describe('HTTP: 401/403/409/5xx, payload, zgadywanie ID i list_id', () => {
     const shared = create('note', note('Wspólna'), 'shared');
     await a.push(shared);
     await b.push(update('note', shared.entityId, 1, { body: 'B' }));
-    const response = await a.pushRaw({ protocolVersion: 1, deviceId: a.deviceId, mutations: [update('note', shared.entityId, 1, { body: 'A' })] });
+    const response = await a.pushRaw({ protocolVersion: 2, deviceId: a.deviceId, mutations: [update('note', shared.entityId, 1, { body: 'A' })] });
     expect(response.statusCode).toBe(200);
     expect(pushResponseSchema.parse(response.json()).results[0]!.status).toBe('conflict');
     database.sqlite.exec(`CREATE TEMP TRIGGER fail_devices BEFORE UPDATE ON devices BEGIN SELECT RAISE(ABORT, 'synthetic sql detail'); END`);
-    const broken = await a.pushRaw({ protocolVersion: 1, deviceId: a.deviceId, mutations: [create('note', note('x'), 'private')] });
+    const broken = await a.pushRaw({ protocolVersion: 2, deviceId: a.deviceId, mutations: [create('note', note('x'), 'private')] });
     expect([broken.statusCode, broken.body]).toEqual([500, JSON.stringify({ error: 'unavailable' })]);
   });
+});
+
+it('sync v1 wymaga aktualizacji przed zapisem lub zwróceniem danych; v2 odczytuje stare rekordy', async () => {
+  const { a } = await devices();
+  const legacy = create('task', { ...task('Stary klient'), recurrence: { frequency: 'daily', interval: 1, startDate: '2026-11-05' } }, 'shared');
+  const before = count('SELECT count(*) AS n FROM mutation_receipts');
+  const rejected = await a.pushRaw({ protocolVersion: 1, deviceId: a.deviceId, mutations: [legacy] });
+  expect(rejected.statusCode).toBe(400); expect(rejected.json()).toEqual({ error: 'upgrade_required' });
+  expect(count('SELECT count(*) AS n FROM mutation_receipts')).toBe(before);
+  expect(count('SELECT count(*) AS n FROM tasks')).toBe(0);
+  for (const protocol of [undefined, '1']) {
+    const r = await app.inject({ method: 'GET', url: '/api/sync/pull', headers: { cookie: a.cookie, [SYNC_ACCOUNT_HEADER]: A_ID, ...(protocol ? { 'x-razem-protocol': protocol } : {}) } });
+    expect(r.statusCode).toBe(400); expect(r.json()).toEqual({ error: 'upgrade_required' });
+  }
+  expect((await a.push(legacy))[0]?.status).toBe('ack');
+  await a.sync();
+  expect(a.records()).toMatchObject([{ data: { title: 'Stary klient', recurrence: { frequency: 'daily' } } }]);
 });

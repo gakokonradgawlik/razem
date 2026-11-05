@@ -3,11 +3,11 @@ import type { SQL } from 'drizzle-orm';
 import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { z } from 'zod';
 import {
-  canReadRecord, dataSchemas, entityTypeSchema, idSchema, recordSchemaUnion, tombstoneSchema, validateDomain, visibilitySchema,
+  taskOccurrence, validTaskScheduleChange, canReadRecord, dataSchemas, entityTypeSchema, idSchema, recordSchemaUnion, tombstoneSchema, validateDomain, visibilitySchema,
 } from '@razem/contracts';
-import type { AccountScope, EntityType, SyncRecord } from '@razem/contracts';
+import type { AccountScope, EntityType, SyncRecord, TaskSemanticEvent } from '@razem/contracts';
 import type { Database } from './index.js';
-import { domainTables, syncChanges, syncState, taskOccurrences, tombstones } from './schema.js';
+import { domainTables, syncChanges, syncState, taskOccurrences, taskEvents, tombstones } from './schema.js';
 
 export type Tombstone = z.infer<typeof tombstoneSchema>;
 export type ServerState = { kind: 'record'; record: SyncRecord } | { kind: 'tombstone'; tombstone: Tombstone };
@@ -141,6 +141,26 @@ export class RecordRepository {
     }).run();
   }
 
+  private taskEvent(record: SyncRecord, before?: SyncRecord) {
+    if (record.entityType !== 'task' && record.entityType !== 'task_occurrence') return;
+    const task = record.entityType === 'task' ? record : this.find({ householdId: record.householdId, userId: record.ownerId }, 'task', record.data.taskId);
+    if (!task || task.entityType !== 'task') return;
+    const kinds: TaskSemanticEvent['kind'][] = [];
+    if (record.entityType === 'task') {
+      if (!before) kinds.push('task.created', 'task.assigned');
+      else if (before.entityType === 'task') {
+        if (before.deletedAt !== record.deletedAt) kinds.push(record.deletedAt ? 'task.deleted' : 'task.restored');
+        if (before.data.assignee !== record.data.assignee) kinds.push('task.assigned');
+        if (canonical([before.data.dueDate, before.data.dueAt, before.data.timezone, before.data.recurrence]) !== canonical([record.data.dueDate, record.data.dueAt, record.data.timezone, record.data.recurrence])) kinds.push('task.schedule_changed');
+      }
+    }
+    if ((before?.data as Record<string, unknown> | undefined)?.completedAt !== record.data.completedAt && (before || record.data.completedAt))
+      kinds.push(record.data.completedAt ? 'task.completed' : 'task.reopened');
+    for (const kind of kinds) this.database.db.insert(taskEvents).values({ taskId: task.id, entityId: record.id,
+      version: record.version, kind, occurrenceKey: record.entityType === 'task_occurrence' ? record.data.occurrenceKey : null,
+      householdId: task.householdId, ownerId: task.ownerId, visibility: task.visibility, changedAt: record.updatedAt }).run();
+  }
+
   /** Purged IDs: readable ones answer with the tombstone, others like a missing record. */
   private tombstoned(scope: AccountScope, type: EntityType, id: string): RecordResult | null {
     const exists = this.database.db.select({ id: tombstones.id }).from(tombstones)
@@ -172,11 +192,18 @@ export class RecordRepository {
     if (!accessPolicy.canWrite(scope, meta)) return notFound;
     const data = strictData(type.data, input.data, meta.visibility);
     if (!data) return invalid;
+    if (type.data === 'task_occurrence') {
+      const parent = this.find(scope, 'task', String(data.taskId));
+      if (!parent || parent.entityType !== 'task' || !taskOccurrence(parent.data, String(data.occurrenceKey))) return invalid;
+    }
     return this.database.db.transaction((): RecordResult => {
       const table = this.table(type.data);
       const existing = this.database.db.select({ id: table.id }).from(table).where(eq(table.id, input.id)).get();
       if (existing) {
         const visible = this.find(scope, type.data, input.id);
+        if (visible?.entityType === 'task_occurrence' && type.data === 'task_occurrence' && visible.deletedAt === null
+          && visible.data.taskId === data.taskId && visible.data.occurrenceKey === data.occurrenceKey
+          && !!visible.data.completedAt === !!data.completedAt) return { status: 'ack', record: visible };
         return visible ? { status: 'conflict', record: visible } as const : notFound;
       }
       const purged = this.tombstoned(scope, type.data, input.id);
@@ -196,6 +223,7 @@ export class RecordRepository {
         throw error;
       }
       this.journal(record);
+      this.taskEvent(record);
       return { status: 'ack', record } as const;
     }, { behavior: 'immediate' });
   }
@@ -231,6 +259,7 @@ export class RecordRepository {
       if (updated.changes !== 1) return { status: 'conflict', record: current } as const;
       const record = this.find(scope, type.data, current.id)!;
       this.journal(record);
+      this.taskEvent(record, current);
       return { status: 'ack', record } as const;
     }, { behavior: 'immediate' });
   }
@@ -246,7 +275,7 @@ export class RecordRepository {
       const patch = (dataSchemas[current.entityType] as z.ZodObject).partial().safeParse(input.patch);
       const data = current.data as Record<string, unknown>;
       return patch.success && Object.keys(patch.data).length === keys.length
-        && Object.entries(patch.data).every(([key, value]) => key in data && canonical(data[key]) === canonical(value));
+        && Object.entries(patch.data).every(([key, value]) => key in data && (key === 'completedAt' && value !== null && data[key] !== null || canonical(data[key]) === canonical(value)));
     };
     return this.write(scope, input, (current) => {
       if (current.deletedAt !== null) return 'conflict';
@@ -256,7 +285,13 @@ export class RecordRepository {
       const patch = (dataSchemas[current.entityType] as z.ZodObject).partial().safeParse(input.patch);
       if (!patch.success) return null;
       const merged = strictData(current.entityType, { ...current.data, ...patch.data }, current.visibility);
-      return merged ? patch.data as Record<string, unknown> : null;
+      if (!merged) return null;
+      if (current.entityType === 'task') {
+        const parsed = dataSchemas.task.parse(merged);
+        if (!validTaskScheduleChange(current.data, parsed)) return null;
+        if (parsed.recurrence && patch.data.completedAt !== undefined && patch.data.completedAt !== null) return null;
+      }
+      return patch.data as Record<string, unknown>;
     }, noop);
   }
 

@@ -83,6 +83,7 @@ export interface AppServices {
   resolveConflict?(id: string, resolution: ConflictResolution): Promise<ActionResult>;
   discardRejected?(id: string): Promise<ActionResult>;
   listTrash?(): Promise<LoadResult<TrashItem[]>>;
+  setTaskOccurrence?(taskId: string, occurrenceKey: string, completed: boolean): Promise<ActionResult>;
   restoreRecord?(entityType: EntityType, id: string): Promise<ActionResult>;
 }
 

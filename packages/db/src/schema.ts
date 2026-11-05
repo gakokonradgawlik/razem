@@ -143,3 +143,11 @@ export const domainTables = {
   shopping_list: shoppingLists, shopping_item: shoppingItems, task: tasks, task_occurrence: taskOccurrences,
   calendar_event: calendarEvents, important_date: importantDates, note: notes, reminder: reminders,
 } as const;
+
+/** Server-only events; consumers must re-read task ACL/current state before dispatch. */
+export const taskEvents = sqliteTable('task_events', {
+  sequence: integer('sequence').primaryKey({ autoIncrement: true }), taskId: text('task_id').notNull(),
+  entityId: text('entity_id').notNull(), version: integer('version').notNull(), kind: text('kind').notNull(),
+  occurrenceKey: text('occurrence_key'), householdId: text('household_id').notNull(), ownerId: text('owner_id').notNull(),
+  visibility: text('visibility', { enum: ['private', 'shared'] }).notNull(), changedAt: text('changed_at').notNull(),
+});

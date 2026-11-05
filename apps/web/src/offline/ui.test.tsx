@@ -137,8 +137,9 @@ const childCases: ChildCase[] = [
   },
   {
     type: 'task_occurrence', table: 'task_occurrences', columns: 'task_id AS taskId, occurrence_key AS occurrenceKey, completed_at AS completedAt, version',
-    make: ({ task }) => ({ taskId: task, occurrenceKey: '2026-11-05', completedAt: null }),
-    mine: { completedAt: T1 }, theirs: { completedAt: T2 },
+    make: ({ task }) => ({ taskId: task, occurrenceKey: '2026-11-05', completedAt: T2 }),
+    // Complete vs reopen is a conflict; two completion timestamps express the same intent.
+    mine: { completedAt: T1 }, theirs: { completedAt: null },
     pick: () => fireEvent.click(screen.getByRole('radio', { name: `Moja: ${T1}` })),
     expected: ({ task }) => ({ taskId: task, occurrenceKey: '2026-11-05', completedAt: T1, version: 3 }),
   },

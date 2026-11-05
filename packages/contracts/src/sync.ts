@@ -3,7 +3,8 @@ import { instantSchema } from './dates.js';
 import { dataSchemas, entityTypeSchema, idSchema, recordSchemaUnion, validateDomain, visibilitySchema } from './model.js';
 import type { EntityType } from './model.js';
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
+export const SYNC_PROTOCOL_HEADER = 'x-razem-protocol';
 export const MAX_PUSH_BATCH = 100;
 /**
  * Required on /api/sync/push and /api/sync/pull: the account (user ID) whose local queue and

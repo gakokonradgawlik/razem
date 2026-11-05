@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { dateSchema, instantSchema, timezoneSchema } from './dates.js';
+import { localDate } from './tasks.js';
+import { dateSchema, instantSchema, timezoneSchema, localTimeToInstant } from './dates.js';
 
 export const idSchema = z.uuid();
 export const visibilitySchema = z.enum(['private', 'shared']);
@@ -16,11 +17,25 @@ export const userSchema = z.strictObject({
 export const deviceSchema = z.strictObject({
   id: idSchema, userId: idSchema, name: title, lastSeenAt: instantSchema,
 });
-export const recurrenceSchema = z.discriminatedUnion('frequency', [
-  z.strictObject({ frequency: z.literal('daily'), interval: z.number().int().min(1).max(365), startDate: dateSchema }),
-  z.strictObject({ frequency: z.literal('weekly'), interval: z.number().int().min(1).max(52), startDate: dateSchema }),
-  z.strictObject({ frequency: z.literal('monthly'), interval: z.number().int().min(1).max(12), startDate: dateSchema }),
-]);
+const ruleShape = {
+  frequency: z.enum(['daily', 'weekly', 'monthly']), interval: z.number().int().min(1).max(365), startDate: dateSchema,
+};
+export const recurrenceSegmentSchema = z.strictObject({
+  ...ruleShape, until: dateSchema, time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), timezone: timezoneSchema,
+});
+export const recurrenceSchema = z.strictObject({
+  ...ruleShape, until: dateSchema.optional(), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(), history: z.array(recurrenceSegmentSchema).max(1000).optional(),
+}).superRefine((rule, ctx) => {
+  if ((rule.frequency === 'weekly' && rule.interval > 52) || (rule.frequency === 'monthly' && rule.interval > 12))
+    ctx.addIssue({ code: 'custom', message: 'Niepoprawny interwał' });
+  let end = '';
+  for (const segment of rule.history ?? []) {
+    if (segment.startDate < end || segment.until <= segment.startDate || segment.until > rule.startDate)
+      ctx.addIssue({ code: 'custom', message: 'Niepoprawna historia harmonogramu' });
+    end = segment.until;
+  }
+  if (rule.until && rule.until <= rule.startDate) ctx.addIssue({ code: 'custom', message: 'Niepoprawny koniec harmonogramu' });
+});
 
 export const shoppingListDataSchema = z.strictObject({ name: title });
 export const shoppingItemDataSchema = z.strictObject({
@@ -73,6 +88,12 @@ export function validateDomain(type: EntityType, data: Record<string, unknown>, 
   if (type === 'task') {
     if (data.dueDate !== null && data.dueAt !== null) invalid('Termin jest datą albo chwilą');
     if (data.recurrence && !data.dueDate && !data.dueAt) invalid('Powtarzanie wymaga terminu');
+    if (data.recurrence) {
+      const rule = data.recurrence as z.infer<typeof recurrenceSchema>;
+      if (data.completedAt !== null) invalid('Ukończ pojedynczy termin zamiast szablonu');
+      if (rule.time !== undefined && (data.dueDate && data.dueDate !== rule.startDate || data.dueAt && localDate(String(data.dueAt), String(data.timezone)) !== rule.startDate)) invalid('Termin musi odpowiadać początkowi reguły');
+      if (rule.time !== undefined && (rule.time === null ? data.dueAt !== null : data.dueAt === null || Date.parse(String(data.dueAt)) !== Date.parse(localTimeToInstant(rule.startDate, rule.time, String(data.timezone))))) invalid('Godzina reguły nie odpowiada terminowi');
+    }
     if (visibility === 'private' && data.assignee !== 'self') invalid('Prywatne zadanie można przypisać tylko sobie');
   }
   if (type === 'calendar_event') {
