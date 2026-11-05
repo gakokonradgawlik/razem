@@ -6,6 +6,9 @@
 transakcja Dexie (rekord i outbox) → istniejący silnik sync → `RecordRepository`.
 UI czyta wyłącznie lokalną bazę konta. Sukces, wyczyszczenie pola i Cofnij pojawiają
 się po zatwierdzeniu lokalnej transakcji; ACK serwera nie jest warunkiem pracy.
+Przy zimnym starcie formularze pojawiają się po otwarciu bazy konta. Wcześniej
+widoczny jest komunikat „Otwieranie danych na tym urządzeniu…”, aby zakończenie
+inicjalizacji nie zamontowało ponownie już wypełnianego formularza i nie usunęło tekstu.
 
 Wiele list, domyślnie wspólnych. Przed utworzeniem wybór „Wspólne” / „Tylko ja”;
 po zapisie zakres niezmienny, także offline. Dziecko dziedziczy zakres listy,
