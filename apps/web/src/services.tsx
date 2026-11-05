@@ -45,6 +45,8 @@ export type ConflictResolution = { choice: 'server' } | { choice: 'mine' } | { c
 export type TrashItem = { id: string; entityType: EntityType; title: string; deletedAt: string; visibility: Visibility };
 
 export interface AppServices {
+  /** No form may accept input until the initial account database is open. */
+  initializing?: boolean;
   session: Session | null;
   /**
    * Opaque identity of the open account database (new on every sign-in, account switch

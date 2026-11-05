@@ -90,6 +90,7 @@ test('zakupy offline → restart procesu → sync → partner; kosz, polskie ilo
     await a.getByRole('link', { name: /^Żółty ser/ }).click();
     await a.getByRole('button', { name: 'Usuń pozycję' }).click();
     await a.getByRole('group', { name: /Potwierdź usunięcie/ }).getByRole('button', { name: 'Usuń', exact: true }).click();
+    await expect(a).toHaveURL(ORIGIN + shared);
     await a.goto('/kosz');
     const row = a.getByRole('listitem').filter({ has: a.getByText('Żółty ser', { exact: true }) });
     await row.getByRole('button', { name: 'Przywróć' }).click();

@@ -123,8 +123,9 @@ export function App({ services = unavailableServices }: { services?: AppServices
   // are discarded instead of being shown to, or saved into, the new one.
   const accountKey = services.accountKey ?? '';
   const Screen = route.screen;
-  if (route.chrome === 'none') return <ServicesProvider value={services}><Screen key={accountKey} /></ServicesProvider>;
-  const screen = <ParamsProvider value={params}><Screen /></ParamsProvider>;
+  const loading = <><ScreenHeader title={route.title} /><Section><p role="status">Otwieranie danych na tym urządzeniu…</p></Section></>;
+  if (route.chrome === 'none') return <ServicesProvider value={services}>{services.initializing ? loading : <Screen key={accountKey} />}</ServicesProvider>;
+  const screen = services.initializing ? loading : <ParamsProvider value={params}><Screen /></ParamsProvider>;
   return (
     <ServicesProvider value={services}>
       <a className="skip-link" href="#main">Przejdź do treści</a>
