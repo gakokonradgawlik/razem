@@ -17,11 +17,11 @@ Ekrany RAZ-3 działają teraz na lokalnej bazie (lista odświeża się po każde
 | Kontrola | Wynik |
 | --- | --- |
 | `npm run typecheck` | PASS |
-| `npm test` | PASS: 17 plików, 160 testów (po review: +3 klienta, +1 serwera) |
+| `npm test` | PASS: 17 plików, 164 testy (po 1. review: +3 klienta, +1 serwera; po 2. review: +3 UI, +1 klienta) |
 | `npm run build` | PASS (ostrzeżenie Vite o paczce >500 kB jak w RAZ-3) |
-| `npm run test:e2e` | PASS 39, 1 pominięty (safe-area tylko Chromium, jak w RAZ-3) |
+| `npm run test:e2e` | PASS 39, 1 pominięty (safe-area tylko Chromium, jak w RAZ-3); po 2. review nie uruchamiano ponownie – zmiana dotyczy tylko scalania, pokrytego testami UI na prawdziwym kontrolerze i serwerze |
 
-### Klient ↔ prawdziwy serwer (vitest, `apps/web/src/offline/sync.test.ts`, 20 testów)
+### Klient ↔ prawdziwy serwer (vitest, `apps/web/src/offline/sync.test.ts`, 21 testów)
 Dexie na fake-indexeddb (osobna fabryka = osobny telefon, wspólna = karty), serwer Fastify +
 SQLite z RAZ-4 przez `app.inject` z ciasteczkami, CSRF i wstrzykiwanymi awariami (`test-harness.ts`).
 - Rekord i outbox w jednej transakcji; QuotaExceeded przy zapisie outboxu wycofuje rekord (create i update), wynik `storage_full`; eksport działa; „restart” (nowa karta) zachowuje kolejkę, potem jeden ACK.
@@ -44,11 +44,17 @@ SQLite z RAZ-4 przez `app.inject` z ciasteczkami, CSRF i wstrzykiwanymi awariami
 - Upgrade bazy v1 z oczekującą mutacją: ten sam deviceId i clientMutationId, wysłane, kolejka pusta.
 - Odrzucona zmiana (`not_found`): stan „wymaga działania”, brak ponownej wysyłki, inne zmiany przechodzą, można ją odrzucić.
 
-### UI na prawdziwym kontrolerze (vitest jsdom, `apps/web/src/offline/ui.test.tsx`, 3 testy)
+### UI na prawdziwym kontrolerze (vitest jsdom, `apps/web/src/offline/ui.test.tsx`, 6 testów)
 Status „Zsynchronizowano” → „Serwer niedostępny · zmiany czekają na wysłanie (1)” → ponownie po ACK;
 brak miejsca: formularz nie potwierdza zapisu, treść zostaje, odznaka z „Eksportuj”. Konflikt: odznaka
 „1 zmiana wymaga sprawdzenia” → ekran z obiema wersjami → „Połącz ręcznie” → zapis na serwerze (wersja 3).
 Wylogowanie z niewysłaną zmianą: ostrzeżenie, plik eksportu z treścią tylko tego konta, potem drugie konto nie widzi danych.
+Po 2. review – scalanie rekordów podrzędnych (`it.each`): `shopping_item` (ręczne połączenie uwagi),
+`task_occurrence` (wybór `completedAt`), `reminder` (wybór `minutesBefore`). Ekran nie pokazuje
+`listId`/`taskId`+`occurrenceKey`/`targetType`+`targetId`, a „Zapisz połączoną wersję” daje ACK: wiersz
+w SQLite ma wersję 3 i niezmienione powiązanie, kolejka pusta. Klient: merge z podrobionym `listId`
+zapisuje się z `listId` rekordu. Mutacyjnie: bez poprawki ekranu i warstwy 3 testy UI nie przechodzą;
+bez poprawki warstwy nie przechodzi test klienta.
 Mapowanie stanu na status: `apps/web/src/ui/ui.test.ts`.
 
 ### E2E w przeglądarkach (`tests/e2e/offline.spec.ts`, Chromium + WebKit/iPhone 13)

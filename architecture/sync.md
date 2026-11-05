@@ -150,6 +150,9 @@ kolejka, ACK/rebase, pull, konflikty, eksport), `sync.ts` (silnik), `controller.
 - **Konflikty** (`/zmiany`, `/zmiany/:id`): moja wersja i wersja z serwera obok siebie; wybór
   serwera, mojej albo scalanie pole po polu (tekst można połączyć ręcznie). Rozwiązanie to nowa
   mutacja z nowym ID na bieżącej wersji serwera – zmiana w międzyczasie daje nowy konflikt.
+  Powiązania nadrzędne i klucze (`IMMUTABLE_PARENT_FIELDS` w `@razem/contracts`: `listId`, `taskId`,
+  `occurrenceKey`, `targetType`, `targetId`) nie są edytowalne przy scalaniu; `LocalStore.resolve`
+  zawsze bierze je z rekordu, niezależnie od danych z ekranu.
   Kosz na serwerze + moja edycja → „Przywróć z moją wersją” (restore + update). Tombstone →
   moja treść jako **nowy** wpis (nowe ID), stare ID nie wraca. Moje usunięcie + zdalna edycja →
   „Usuń mimo to” albo wersja z serwera. Odrzucone zmiany można odrzucić lokalnie.
