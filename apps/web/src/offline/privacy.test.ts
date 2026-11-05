@@ -34,8 +34,8 @@ it.each(['a', 'b'] as const)('%s: osiem typów private partnera nie wycieka prze
     important_date: { name: 'Próba' }, note: { body: 'Próba' }, reminder: { enabled: false },
   };
   let delta: string | undefined;
-  for (const trash of [false, true]) {
-    if (trash) {
+  for (const phase of ['live', 'trash', 'tombstone']) {
+    if (phase === 'trash') {
       const repo = new RecordRepository(server.database);
       // Children first: also verify that trash/restore cannot bypass inherited ACL.
       for (const record of [...hidden].reverse()) {
@@ -43,15 +43,20 @@ it.each(['a', 'b'] as const)('%s: osiem typów private partnera nie wycieka prze
         expect(repo.remove(owner, { entityType: record.entityType, id: record.id, baseVersion: current.version }).status).toBe('ack');
       }
     }
+    if (phase === 'tombstone') {
+      server.clock.now += 31 * 86_400_000; server.sync.maintenance();
+      expect(await tab.login(ACCOUNTS[who].login, ACCOUNTS[who].password)).toEqual({ ok: true });
+      headers.cookie = phone.network.cookie!;
+    }
     let cursor: string | undefined;
     do {
       const page = await tab.api.pull(cursor, 2, account);
       expect(page.status).toBe('ok'); noLeak(page);
       if (page.status !== 'ok') throw new Error('Unexpected resync');
       cursor = page.hasMore ? page.nextCursor : undefined;
-      if (!cursor && !trash) delta = page.nextCursor;
+      if (!cursor && phase === 'live') delta = page.nextCursor;
     } while (cursor);
-    if (trash) noLeak(await tab.api.pull(delta, 200, account));
+    if (phase !== 'live') noLeak(await tab.api.pull(delta, 200, account));
     noLeak(await tab.api.exportAccount(account));
     await tab.syncNow();
     noLeak(await tab.store!.db.records.toArray()); noLeak(await tab.store!.trash());

@@ -123,6 +123,60 @@ test('cold start: restart całej przeglądarki bez sieci, różne trasy, trwały
   } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }
 });
 
+test('utrata ACK po realnym commicie → restart procesu offline → retry tego samego ID daje jedną wersję', async ({ playwright, browserName }, info) => {
+  const origin = originOf(info.project.name), profile = await mkdtemp(join(tmpdir(), 'razem-ack-profile-'));
+  const options = { headless: true, baseURL: origin };
+  let context = await playwright[browserName].launchPersistentContext(profile, options);
+  const title = `ACK utracony ${info.project.name}-${Date.now()}`;
+  try {
+    let page = await context.newPage(); await signIn(page);
+    // Only the transport is fault-injected: fetch really reaches Fastify/SQLite.
+    // Discard a successful response after reading it, then freeze retries until restart.
+    await context.addInitScript(() => {
+      const send = window.fetch.bind(window);
+      window.fetch = async (...args: Parameters<typeof fetch>) => {
+        const path = typeof args[0] === 'string' ? args[0] : args[0] instanceof URL ? args[0].pathname : args[0].url;
+        if (path.startsWith('/api/') && localStorage.getItem('__test_lost_ack')) throw new TypeError('Synthetic network loss');
+        const response = await send(...args);
+        if (path === '/api/sync/push' && response.ok) {
+          const body = await response.clone().json();
+          if (body.results.some((r: { status: string }) => r.status === 'ack')) {
+            localStorage.setItem('__test_lost_ack', JSON.stringify(body));
+            throw new TypeError('Synthetic response lost after commit');
+          }
+        }
+        return response;
+      };
+    });
+    await note(page, title);
+    await expect.poll(() => page.evaluate(() => !!localStorage.getItem('__test_lost_ack'))).toBe(true);
+    const before = await localState(page); expect(before.queue).toHaveLength(1);
+    const committed = await page.evaluate(() => JSON.parse(localStorage.getItem('__test_lost_ack')!));
+    expect(committed.results[0]).toMatchObject({ status: 'ack', clientMutationId: before.queue[0]!.clientMutationId, state: { record: { version: 1 } } });
+    await page.goto('/');
+    await expect(badge(page)).toContainText('Serwer niedostępny');
+    await context.close();
+    context = await playwright[browserName].launchPersistentContext(profile, { ...options, offline: true });
+    page = await context.newPage(); await page.goto('/notatki');
+    await expect(page.getByText(title, { exact: true })).toBeVisible();
+    expect((await localState(page)).queue.map((q) => q.clientMutationId)).toEqual(before.queue.map((q) => q.clientMutationId));
+    await context.setOffline(false);
+    await page.goto('/ustawienia'); await page.getByRole('button', { name: 'Synchronizuj teraz', exact: true }).click();
+    await expect(badge(page)).toContainText('Zsynchronizowano', { timeout: 20_000 });
+    const after = await localState(page); expect(after.queue).toHaveLength(0);
+    expect(after.records.filter((r) => r.data.title === title)).toHaveLength(1);
+    const me = await (await context.request.get('/api/me')).json();
+    let cursor: string | undefined; const matches = [];
+    do {
+      const result = await (await context.request.get(`/api/sync/pull${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { headers: { 'x-razem-account': me.user.id, 'x-razem-protocol': '2' } })).json();
+      expect(result.status).toBe('ok');
+      matches.push(...result.changes.filter((c: { record?: { data: { title?: string } } }) => c.record?.data.title === title));
+      cursor = result.hasMore ? result.nextCursor : undefined;
+    } while (cursor);
+    expect(matches).toHaveLength(1); expect(matches[0].record.version).toBe(1);
+  } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }
+});
+
 test('aktualizacja: błąd instalacji, formularz i pending w dwóch kartach, aktywacja dopiero po zamknięciu', async ({ browser, request }, info) => {
   const origin = originOf(info.project.name);
   const context = await browser.newContext({ baseURL: origin });
