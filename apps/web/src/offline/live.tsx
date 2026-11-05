@@ -52,6 +52,7 @@ export function servicesFor(controller: AppController, snapshot: Snapshot): AppS
   const command = <T,>(run: (s: LocalStore) => Promise<StoreResult<T>>) => controller.command(run, generation);
   const syncState = toSyncState(snapshot);
   return {
+    initializing: snapshot.phase === 'starting',
     session: account ? { login: account.login, displayName: account.displayName, mustChangePassword: account.mustChangePassword } : null,
     accountKey: `${account?.userId ?? '-'}#${generation}`,
     pendingChanges: snapshot.unsent,

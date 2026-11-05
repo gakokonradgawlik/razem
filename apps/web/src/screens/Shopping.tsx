@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { defaultVisibility } from '@razem/contracts';
 import { AddButton, EmptyState, List, ListRow, Notice, PrivacyPicker, PrivacyTag, ScreenHeader, Section, TextArea, TextField, Button } from '../ui/components.js';
 import { FormScreen, useFormValues } from '../ui/form.js';
@@ -50,8 +50,7 @@ export function ShoppingListScreen() {
   const list = listState.value;
   return (
     <>
-      <ScreenHeader title={list.data.name} back={back}
-        action={<AddButton label="Dodaj pozycję" to={pathFor(shoppingPaths.newItem, { listId })} />} />
+      <ScreenHeader title={list.data.name} back={back} />
       <p className="screen-meta"><PrivacyTag value={list.visibility} /></p>
       <ShoppingItems list={list} />
       <Section>
@@ -69,7 +68,6 @@ function ShoppingItems({ list }: { list: Typed<'shopping_list'> }) {
   const [state, reload] = useRecords('shopping_item', list.id);
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string; undo?: { id: string; checked: boolean } } | null>(null);
   const items = loaded(state)?.filter((item) => item.data.listId === list.id);
-  const newItem = pathFor(shoppingPaths.newItem, { listId: list.id });
 
   // Checking is written at once (no Zapisz); success offers Cofnij, failure is reported.
   const toggle = async (item: Item, checked: boolean, isUndo = false) => {
@@ -86,7 +84,9 @@ function ShoppingItems({ list }: { list: Typed<'shopping_list'> }) {
     if (current) void toggle(current, checked, true);
   };
   if (!items) return <Section><LoadingNotice /></Section>;
-  const sorted = [...items].sort((a, b) => a.data.sortKey - b.data.sortKey);
+  // UUID breaks ties from concurrent devices/the same millisecond. Neither checking
+  // nor ACK/pull changes sortKey, so unchecking restores the original place.
+  const sorted = [...items].sort((a, b) => a.data.sortKey - b.data.sortKey || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const open = sorted.filter((item) => !item.data.checked), done = sorted.filter((item) => item.data.checked);
   const row = (item: Item) => (
     <li key={item.id} className="row item-row">
@@ -104,6 +104,7 @@ function ShoppingItems({ list }: { list: Typed<'shopping_list'> }) {
   );
   return (
     <>
+      <QuickShoppingItem list={list} onAdded={reload} />
       <div aria-live="polite" className="form-messages">
         {message && (
           <Notice tone={message.tone} role={message.tone === 'danger' ? 'alert' : 'status'}>
@@ -115,12 +116,53 @@ function ShoppingItems({ list }: { list: Typed<'shopping_list'> }) {
       </div>
       <Section title="Do kupienia">
         {items.length === 0
-          ? <EmptyState icon="shopping" title="Lista jest pusta" text="Dopisz np. „Mleko, 2 l” — ilość i uwaga są opcjonalne." action={{ label: 'Dodaj pozycję', to: newItem }} />
+          ? <EmptyState icon="shopping" title="Lista jest pusta" text="Dopisz nazwę powyżej. Ilość i uwagę możesz uzupełnić w formularzu pozycji." />
           : open.length === 0 ? <EmptyState icon="check" title="Wszystko kupione" text="Kupione pozycje są niżej; można je odznaczyć." />
             : <ul className="list" aria-label="Do kupienia">{open.map(row)}</ul>}
       </Section>
       {done.length > 0 && <Section title="Kupione"><ul className="list" aria-label="Kupione">{done.map(row)}</ul></Section>}
     </>
+  );
+}
+
+function QuickShoppingItem({ list, onAdded }: { list: Typed<'shopping_list'>; onAdded: () => void }) {
+  const { saveRecord } = useServices();
+  const form = useRef<HTMLFormElement>(null);
+  const submitting = useRef(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  return (
+    <Section title="Dopisz do listy">
+      <form ref={form} className="shopping-quick group" aria-label="Szybkie dodawanie" noValidate onSubmit={async (event) => {
+        event.preventDefault();
+        if (submitting.current) return;
+        const problem = requiredText(name, 'nazwę');
+        setError(problem); setMessage(null);
+        if (problem) { form.current?.querySelector('input')?.focus(); return; }
+        submitting.current = true; setBusy(true);
+        try {
+          const result = await saveRecord({ entityType: 'shopping_item', data: {
+            listId: list.id, name: name.trim(), quantity: '', note: '', checked: false, sortKey: Date.now(),
+          } });
+          if (!result.ok) { setMessage({ ok: false, text: failureMessage(result) }); return; }
+          setMessage({ ok: true, text: `Dodano: ${name.trim()}` });
+          setName(''); onAdded();
+          form.current?.querySelector('input')?.focus();
+        } catch { setMessage({ ok: false, text: 'Nie zapisano. Spróbuj ponownie.' }); }
+        finally { submitting.current = false; setBusy(false); }
+      }}>
+        <TextField label="Nazwa produktu" value={name} onValue={setName} error={error} maxLength={400}
+          placeholder="np. Świeże bułki" autoComplete="off" enterKeyHint="done" readOnly={busy} />
+        <div className="shopping-quick__actions">
+          <Link to={pathFor(shoppingPaths.newItem, { listId: list.id })} className="button button--plain">Dodaj pozycję</Link>
+          <Button type="submit" variant="filled" disabled={busy} aria-busy={busy || undefined}>Dodaj</Button>
+        </div>
+        <p className="field__hint">Ilość i uwagę podasz w formularzu „Dodaj pozycję”. Widoczność jak lista: <PrivacyTag value={list.visibility} /></p>
+        {message && <Notice tone={message.ok ? 'success' : 'danger'} role={message.ok ? 'status' : 'alert'}>{message.text}</Notice>}
+      </form>
+    </Section>
   );
 }
 
@@ -170,7 +212,7 @@ function ShoppingItemForm({ list, mode }: { list: Typed<'shopping_list'>; mode: 
   const back = listPath(list.id);
   const submit = () => persist(services, 'shopping_item', mode, contractData('shopping_item', {
     listId: list.id, name: values.name.trim(), quantity: values.quantity.trim(), note: values.note,
-    // New items go to the end of the open part; the store may renumber on sync.
+    // Keep this key through checking, editing, restart and sync; UUID breaks ties.
     checked: editing?.data.checked ?? false, sortKey: editing?.data.sortKey ?? Date.now(),
   }));
   return (

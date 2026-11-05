@@ -131,18 +131,26 @@ export class LocalStore {
 
   // ---------- Queries ----------
 
+  private async shoppingParentActive(record: LocalRecord): Promise<boolean> {
+    if (record.entityType !== 'shopping_item') return true;
+    const parent = record.parentId ? await this.db.records.get(record.parentId) : undefined;
+    return !!parent && parent.entityType === 'shopping_list' && parent.deletedAt === null && canReadRecord(this.scope, parent);
+  }
+
   async list(entityType: EntityType, parentId?: string): Promise<LocalRecord[]> {
     const rows = parentId ? await this.db.records.where('parentId').equals(parentId).toArray() : await this.db.records.where('entityType').equals(entityType).toArray();
-    return rows.filter((row) => row.entityType === entityType && row.deletedAt === null && canReadRecord(this.scope, row));
+    const visible = rows.filter((row) => row.entityType === entityType && row.deletedAt === null && canReadRecord(this.scope, row));
+    return (await Promise.all(visible.map(async (row) => await this.shoppingParentActive(row) ? row : null))).filter((row) => row !== null);
   }
   async trash(): Promise<LocalRecord[]> {
     const rows = await this.db.records.toArray();
-    return rows.filter((row) => row.deletedAt !== null && !isChildType(row.entityType) && canReadRecord(this.scope, row))
+    const visible = rows.filter((row) => row.deletedAt !== null && (!isChildType(row.entityType) || row.entityType === 'shopping_item') && canReadRecord(this.scope, row));
+    return (await Promise.all(visible.map(async (row) => await this.shoppingParentActive(row) ? row : null))).filter((row) => row !== null)
       .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''));
   }
   async get(id: string): Promise<LocalRecord | undefined> {
     const row = await this.db.records.get(id);
-    return row && canReadRecord(this.scope, row) ? row : undefined;
+    return row && canReadRecord(this.scope, row) && await this.shoppingParentActive(row) ? row : undefined;
   }
   async pendingCount(): Promise<number> { return this.db.queue.count(); }
   async counts() {
@@ -164,6 +172,7 @@ export class LocalStore {
       if (isChildType(entityType)) {
         const parent = parentId ? await this.db.records.get(parentId) : undefined;
         if (!parent || parent.deletedAt !== null || !canReadRecord(this.scope, parent)) throw new Abort('not_found');
+        if (entityType === 'shopping_item' && parent.entityType !== 'shopping_list') throw new Abort('not_found');
         scopeVisibility = parent.visibility;
         if (parent.visibility === 'private') owner = parent.ownerId;
       } else if (!visibility) throw new Abort('invalid');
@@ -208,6 +217,7 @@ export class LocalStore {
     return this.guarded(async () => {
       const record = await this.db.records.get(id);
       if (!record || record.entityType !== entityType || record.deletedAt === null || !canReadRecord(this.scope, record)) throw new Abort('not_found');
+      if (!(await this.shoppingParentActive(record))) throw new Abort('not_found');
       if (await this.db.conflicts.where('entityId').equals(id).count()) throw new Abort('conflict_open');
       const base = await this.baseFor(record);
       await this.db.records.put({ ...record, deletedAt: null, updatedAt: new Date().toISOString() });
@@ -219,6 +229,7 @@ export class LocalStore {
   private async editable(entityType: EntityType, id: string): Promise<LocalRecord> {
     const record = await this.db.records.get(id);
     if (!record || record.entityType !== entityType || record.deletedAt !== null || !canReadRecord(this.scope, record)) throw new Abort('not_found');
+    if (!(await this.shoppingParentActive(record))) throw new Abort('not_found');
     if (await this.db.conflicts.where('entityId').equals(id).count()) throw new Abort('conflict_open');
     return record;
   }
@@ -247,7 +258,9 @@ export class LocalStore {
     const conflicted = new Set((await this.db.conflicts.toArray()).map((conflict) => conflict.entityId));
     const blocked = new Set(conflicted);
     const waiting = new Set<string>();
-    const pendingCreate = new Set<string>();
+    // Legacy queues may contain a child before its parent (equal queuedAt, UUID
+    // order during migration). Wait until the parent is included or ACKed.
+    const pendingCreate = new Set(queue.filter((entry) => entry.command === 'create').map((entry) => entry.entityId));
     const entries: QueueEntry[] = [], mutations: Mutation[] = [];
     let bytes = 64;
     for (const entry of queue) {
@@ -278,6 +291,7 @@ export class LocalStore {
       }
       bytes += size;
       entries.push(entry); mutations.push(mutation);
+      if (entry.command === 'create') pendingCreate.delete(entry.entityId);
       waiting.add(entry.entityId);
     }
     return { entries, mutations };

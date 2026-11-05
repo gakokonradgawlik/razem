@@ -33,6 +33,39 @@ const fixtures: StoredRecord[] = [
   rec(DATE, 'important_date', { name: 'Rocznica ślubu', kind: 'anniversary', month: 6, day: 14, startYear: 2015 }),
 ];
 
+it('zakupy: szybkie dodawanie zachowuje tekst przy błędzie i czyści dopiero po lokalnym zapisie', async () => {
+  const services = memoryServices();
+  services.saveRecord.mockResolvedValueOnce({ ok: false, reason: 'storage_full' });
+  render(<App services={services} />);
+  go(`/zakupy/${LIST}`);
+  const input = await screen.findByLabelText('Nazwa produktu') as HTMLInputElement;
+  const form = screen.getByRole('form', { name: 'Szybkie dodawanie' });
+  fireEvent.submit(form);
+  expect(input.getAttribute('aria-invalid')).toBe('true');
+  expect(services.saveRecord).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: '  Świeże bułki  ' } });
+  fireEvent.submit(form);
+  expect((await screen.findByRole('alert')).textContent).toContain('brak miejsca');
+  expect(input.value).toBe('  Świeże bułki  ');
+  fireEvent.submit(form);
+  await waitFor(() => expect(input.value).toBe(''));
+  expect(document.activeElement).toBe(input);
+  expect(window.location.pathname).toBe(`/zakupy/${LIST}`);
+  expect(services.saveRecord).toHaveBeenLastCalledWith({ entityType: 'shopping_item', data: {
+    listId: LIST, name: 'Świeże bułki', quantity: '', note: '', checked: false, sortKey: expect.any(Number),
+  } });
+});
+
+it('zakupy: równe klucze mają ten sam porządek niezależnie od kolejności odczytu', async () => {
+  const items = [BREAD, MILK].map((itemId) => rec(itemId, 'shopping_item', {
+    listId: LIST, name: itemId === MILK ? 'Mleko' : 'Chleb', quantity: '', note: '', checked: false, sortKey: 7,
+  }));
+  render(<App services={memoryServices([fixtures[0]!, ...items])} />);
+  go(`/zakupy/${LIST}`);
+  const list = await screen.findByRole('list', { name: 'Do kupienia' });
+  expect(within(list).getAllByRole('link').map((link) => link.textContent)).toEqual(['Mleko', 'Chleb']);
+});
+
 function memoryServices(records = fixtures) {
   const services = {
     ...unavailableServices,

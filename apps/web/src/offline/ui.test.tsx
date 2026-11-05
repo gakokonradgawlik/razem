@@ -35,6 +35,25 @@ function Root({ controller }: { controller: AppController }) { return <App servi
 const go = (path: string) => act(() => navigate(path));
 const status = () => screen.getAllByRole('status').find((node) => node.classList.contains('sync-badge'))!;
 
+it('start offline nie udostępnia formularza przed otwarciem bazy i nie gubi wpisanej nazwy przy odświeżeniu stanu', async () => {
+  const phone = new Phone(server);
+  const first = await signedIn(phone, 'a');
+  await first.dispose(); tabs.splice(tabs.indexOf(first), 1);
+  phone.setOffline(true);
+  const controller = phone.tab(); tabs.push(controller);
+  render(<Root controller={controller} />);
+  go('/zakupy/nowa');
+  expect(screen.queryByRole('textbox')).toBeNull();
+  expect(screen.getByText('Otwieranie danych na tym urządzeniu…')).toBeTruthy();
+  await act(async () => { await controller.init(); });
+  fireEvent.change(screen.getByLabelText('Nazwa listy'), { target: { value: 'Zakupy po restarcie' } });
+  await act(async () => { await controller.refresh(); });
+  expect((screen.getByLabelText('Nazwa listy') as HTMLInputElement).value).toBe('Zakupy po restarcie');
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  await waitFor(() => expect(window.location.pathname).toBe('/zakupy'));
+  expect(await controller.store!.list('shopping_list')).toMatchObject([{ data: { name: 'Zakupy po restarcie' } }]);
+});
+
 it('status: zmiany czekają (liczba), Zsynchronizowano dopiero po ACK; offline i brak miejsca z eksportem', async () => {
   const phone = new Phone(server);
   const tab = await signedIn(phone, 'a');
