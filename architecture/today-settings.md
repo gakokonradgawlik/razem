@@ -53,8 +53,10 @@ Przyszły worker używa strefy domu dla ważnych dat (RAZ-12).
 Preferencje konta: tytuły na ekranie blokady i zmiany zakupów, domyślnie false.
 Opis tytułów wyjaśnia widoczność prywatnych/wspólnych tytułów na blokadzie telefonu.
 Włączenie wysyłki jest uczciwie niedostępne do RAZ-12; nie prosimy o systemową zgodę
-ani nie udajemy subskrypcji. Pełny eksport własnych i wspólnych danych jest wyłączony
-do rzeczywistego endpointu RAZ-13. Istniejący eksport niewysłanych zmian nadal działa.
+ani nie udajemy subskrypcji. Od RAZ-13 pełny eksport własnych i wspólnych danych pobiera JSON z `/api/export`
+(wymaga połączenia). Osobny eksport niewysłanych intencji i pełnych konfliktów działa
+offline, w formacie pending v2; nie kasuje kolejki. Pliki są związane z kontem
+i generacją widoku. Szczegóły: [backup.md](../operations/backup.md).
 
 Kosz, instalacja PWA, zmiana hasła i konflikty są dostępne z Ustawień/Więcej;
 konflikty i ponowne logowanie także bezpośrednio z odznaki Dzisiaj. Kosz odróżnia

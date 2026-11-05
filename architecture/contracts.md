@@ -113,3 +113,20 @@ Kształt rekordów/protokół pozostaje bez zmiany. `calendar.ts` eksportuje `ev
 `calendarReminderAt` i stabilne `calendarReminderId`. Reguły zakresu, czasu/ACL
 i granica przyszłego dispatchera: [calendar.md](calendar.md). Zapis konfiguracji
 przypomnienia nie oznacza dostarczenia powiadomienia (RAZ-12).
+
+## Eksport — RAZ-13
+
+`GET /api/export` wymaga sesji z własnym hasłem i nagłówka `x-razem-account`.
+401 oznacza brak sesji, 403 hasło tymczasowe, 409 rozbieżność konta (także brak
+nagłówka). Odpowiedź `accountExportSchema` z `packages/contracts/src/export.ts`:
+`format=razem-account`, `formatVersion=1`, `exportedAt`, projekcja `account`
+(id/householdId/login/displayName), `settings` i tablica `records` (`SyncRecord[]`).
+Jedna migawka odczytu, rodzice przed dziećmi, także kosz; ACL jak w sync,
+`Cache-Control: no-store`, `Content-Disposition: attachment`. Brak tabel uwierzytelniania,
+push/dispatch, receipts i sekretów. Ten endpoint nie zmienia protokołu sync v2.
+
+Osobny lokalny `razem-pending-changes` ma teraz `formatVersion=2`: zakres konta,
+login i deviceId, pełne wpisy kolejki z kolejnością/patchami/baseVersion/ID mutacji,
+rekordy lokalne powiązane z intencjami, ich bazy oraz pełne konflikty z oboma stanami
+i odrzuconymi intencjami. To atomowy odczyt bez sieci i bez kasowania. Nie jest
+endpointem importu ani backupem serwera. Implementacja: `LocalStore.exportPending`.

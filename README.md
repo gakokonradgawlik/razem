@@ -189,12 +189,24 @@ typów; zapis działa offline. Każda sekcja ma skrót do pełnego modułu.
 Ustawienia → Profil i domownicy: własna nazwa, nazwa drugiej osoby, wspólna strefa
 domu. Zapis profilu/strefy i preferencji powiadomień wymaga serwera; ostatnie
 ustawienia są dostępne po restarcie offline. Motyw zapisuje się na urządzeniu.
-Zmiana strefy nie przesuwa istniejących terminów. Pełny eksport będzie dostępny
-z RAZ-13, wysyłka powiadomień z RAZ-12; aktualnie są jasno oznaczone jako niedostępne.
-Eksport niewysłanych zmian, kosz, konflikty, instalacja i wylogowanie są dostępne.
+Zmiana strefy nie przesuwa istniejących terminów. Eksport konta (RAZ-13) pobiera JSON
+własnych i wspólnych danych z serwera; osobny eksport pending/konfliktów działa offline.
+Wysyłka powiadomień pozostaje zakresem RAZ-12. Kosz, konflikty, instalacja i wylogowanie są dostępne.
 Szczegóły: [architecture/today-settings.md](architecture/today-settings.md),
 dowody: [quality/raz-11.md](quality/raz-11.md).
 
 Test Dzisiaj/ustawień uruchamia dwa dodatkowe izolowane serwery testowe na
 127.0.0.1:4322/4323 (Chromium/WebKit), aby zmiana strefy nie wpływała na inne testy.
 Playwright zatrzymuje je i usuwa syntetyczne bazy po zakończeniu.
+
+## Kopie zapasowe i odzyskiwanie (RAZ-13)
+
+`npm run admin -- backup`, `backup-encrypt` i `restore` zapewniają spójny backup WAL,
+integrity/FK check, retencję 7 dziennych + 4 tygodniowe oraz zaszyfrowany plik do
+samodzielnego przeniesienia poza serwer. Restore tworzy wyłącznie nowy chroniony
+katalog, odwołuje sesje i wymusza ponowne włączenie push. Nie uruchamia aplikacji.
+Timer systemd jest dostarczony jako szablon, bez instalowania go na hoście.
+
+Komendy, konfiguracja/VAPID, RPO 24 h, snapshoty migracji i próba odtworzenia:
+[operations/backup.md](operations/backup.md). Backup serwera nie obejmuje niewysłanych
+zmian ani konfliktów telefonów; ich eksport pobierz osobno w Ustawieniach.

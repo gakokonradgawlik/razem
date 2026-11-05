@@ -36,3 +36,14 @@ Testy ACL negatywne dwoma kontami są warunkiem ukończenia modułów.
 - Za reverse proxy ustaw `PUBLIC_ORIGIN=https://…` i `TRUST_PROXY=<adres proxy>` (IP do limitów). `COOKIE_SECURE=false` jest dozwolone tylko poza produkcją.
 - Zdarzenia `auth_events`: rodzaj i czas (bootstrap, login, logout, password_changed, password_reset, sessions_revoked, login_locked), bez haseł, tokenów i IP. Logger Fastify wyłączony; serwer i CLI wypisują stałe komunikaty.
 - Uprawnienia rekordów: `accessPolicy` + `RecordRepository` w `@razem/db` — jedyna ścieżka odczytu/zapisu domeny. Owner/household z sesji; dane i patch są strict (owner/household/visibility/version odrzucane); dziecko (element zakupów, wystąpienie zadania, przypomnienie) dziedziczy household/visibility rodzica, prywatne także ownera; rodzic niezmienny. Brak dostępu = `not_found` jak dla braku rekordu. Baza dodatkowo wymusza to kluczami złożonymi i triggerami.
+
+## Eksport i odzyskiwanie — RAZ-13
+
+Eksport konta zawiera wyłącznie własne private i shared (także kosz) przez wspólne
+ACL; nie zawiera hashes haseł, sesji ani kluczy push. Nagłówek konta oraz generacja
+klienta chronią również przed pobraniem pliku po przełączeniu konta w innej karcie.
+Pełny backup administracyjny jest wrażliwy: obejmuje oba konta i uwierzytelnianie,
+ma 0700/0600, a przenośna wersja jest szyfrowana uwierzytelnionym AES-256-GCM.
+Po izolowanym restore sesje i subskrypcje push są usuwane, cursor key rotowany;
+nie kasujemy outbox/konfliktów telefonu. Zasady konfiguracji/VAPID, haseł archiwum,
+RPO i procedura: [backup.md](../operations/backup.md).
