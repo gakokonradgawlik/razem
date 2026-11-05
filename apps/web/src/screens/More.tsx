@@ -253,4 +253,4 @@ export function TrashScreen() {
   );
 }
 
-const trashLabel: Partial<Record<EntityType, string>> = { shopping_list: 'Lista zakupów', task: 'Zadanie', calendar_event: 'Wydarzenie', important_date: 'Ważna data', note: 'Notatka' };
+const trashLabel: Partial<Record<EntityType, string>> = { shopping_list: 'Lista zakupów', shopping_item: 'Pozycja zakupów', task: 'Zadanie', calendar_event: 'Wydarzenie', important_date: 'Ważna data', note: 'Notatka' };
