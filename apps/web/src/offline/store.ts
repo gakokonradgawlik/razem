@@ -11,7 +11,7 @@ import type { AccountScope, EntityType, Mutation, PullResponse, PushResponse, Sy
 import type { CalendarSave, NoteCopy } from '../services.js';
 import { idSchema } from '@razem/contracts';
 import { LocalDatabase, parentOf } from '../local-db.js';
-import type { Command, ConflictEntry, LocalRecord, QueueEntry, ServerState, Visibility } from '../local-db.js';
+import type { BaseEntry, ConflictEntry, LocalRecord, QueueEntry, ServerState, Visibility } from '../local-db.js';
 
 /** account_changed: the command was started for an account that is no longer open here (controller). */
 export type StoreFailure = 'storage_full' | 'storage_unavailable' | 'not_found' | 'invalid' | 'conflict_open' | 'record_changed' | 'account_changed';
@@ -75,10 +75,10 @@ export function toMutation(entry: QueueEntry, baseVersion: number): Mutation | n
 }
 
 export type PendingExport = {
-  format: 'razem-pending-changes'; formatVersion: 1; exportedAt: string; account: { login: string };
-  note: string;
-  changes: { queuedAt: string; command: Command; entityType: EntityType; entityId: string; state: string; content: Record<string, unknown> | null }[];
-  conflicts: { entityType: EntityType; entityId: string; mine: Record<string, unknown> | null; server: Record<string, unknown> | null; detectedAt: string }[];
+  format: 'razem-pending-changes'; formatVersion: 2; exportedAt: string;
+  account: AccountScope & { login: string }; deviceId: string | null; note: string;
+  changes: (QueueEntry & { content: Record<string, unknown> | null })[];
+  records: LocalRecord[]; bases: BaseEntry[]; conflicts: ConflictEntry[];
 };
 
 export type Attention =
@@ -623,20 +623,20 @@ export class LocalStore {
 
   /** Everything not yet confirmed by the server, as a file the user can keep. Only this account. */
   async exportPending(login: string): Promise<PendingExport> {
-    const queue = await this.db.queue.orderBy('seq').toArray();
-    const conflicts = await this.db.conflicts.toArray();
-    return {
-      format: 'razem-pending-changes', formatVersion: 1, exportedAt: new Date().toISOString(), account: { login },
-      note: 'Zmiany zapisane tylko na tym urządzeniu, jeszcze niepotwierdzone przez serwer.',
-      changes: await Promise.all(queue.map(async (entry) => ({
-        queuedAt: entry.queuedAt, command: entry.command, entityType: entry.entityType, entityId: entry.entityId, state: entry.state,
-        content: (await this.db.records.get(entry.entityId))?.data ?? entry.data ?? entry.patch ?? null,
-      }))),
-      conflicts: conflicts.map((conflict) => ({
-        entityType: conflict.entityType, entityId: conflict.entityId, mine: conflict.local?.data ?? null,
-        server: conflict.server.kind === 'record' ? conflict.server.record.data : null, detectedAt: conflict.detectedAt,
-      })),
-    };
+    return this.db.transaction('r', ['queue', 'conflicts', 'records', 'bases', 'meta'], async () => {
+      const queue = await this.db.queue.orderBy('seq').toArray();
+      const conflicts = await this.db.conflicts.toArray();
+      const ids = [...new Set([...queue.map((q) => q.entityId), ...conflicts.map((c) => c.entityId)])];
+      const records = (await this.db.records.bulkGet(ids)).filter((r): r is LocalRecord => r !== undefined && canReadRecord(this.scope, r));
+      const bases = (await this.db.bases.bulkGet(ids)).filter((b): b is BaseEntry => b !== undefined);
+      return {
+        format: 'razem-pending-changes', formatVersion: 2, exportedAt: new Date().toISOString(), account: { ...this.scope, login },
+        deviceId: (await this.db.meta.get('deviceId'))?.value as string | undefined ?? null,
+        note: 'Niewysłane zmiany i konflikty tylko tego konta na tym urządzeniu. To nie jest kopia serwera ani automatyczny import.',
+        changes: queue.map((entry) => ({ ...entry, content: records.find((r) => r.id === entry.entityId)?.data ?? entry.data ?? entry.patch ?? null })),
+        records, bases, conflicts,
+      };
+    });
   }
 
   /** Deletes this account's local database (after an explicit logout decision). */

@@ -1,0 +1,11 @@
+[Unit]
+Description=Razem: daily backup (RPO target 24 hours)
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+AccuracySec=1s
+Persistent=true
+Unit=razem-backup.service
+
+[Install]
+WantedBy=timers.target

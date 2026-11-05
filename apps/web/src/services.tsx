@@ -89,6 +89,7 @@ export interface AppServices {
   syncNow?(): Promise<void>;
   /** Downloads a file with the changes that exist only on this device. */
   exportPending?(): Promise<ActionResult>;
+  exportAccount?(): Promise<ActionResult>;
   listAttention?(): Promise<AttentionItem[]>;
   getConflict?(id: string): Promise<LoadResult<ConflictView>>;
   resolveConflict?(id: string, resolution: ConflictResolution): Promise<ActionResult>;

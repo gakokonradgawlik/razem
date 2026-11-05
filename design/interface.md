@@ -81,6 +81,6 @@ komunikat, a puste stany prowadzą do utworzenia własnych danych.
 Ustawienia prowadzą do Profilu i domowników (własna nazwa, nazwa partnera, strefa
 domu) i Preferencji powiadomień. Dane ustawień są czytane lokalnie, ich zapis online
 jest opisany przed zatwierdzeniem. Motyw jest preferencją urządzenia. Formularze
-zachowują treść po błędzie. Wysyłka push i pełny eksport jawnie niedostępne do
-RAZ-12/13; eksport pending działa. Kosz pokazuje datę usunięcia, błędy przywracania
+zachowują treść po błędzie. Wysyłka push pozostaje zakresem RAZ-12. Od RAZ-13 pełny eksport JSON konta działa
+online, a osobny eksport pending i pełnych konfliktów offline bez usuwania kolejki. Kosz pokazuje datę usunięcia, błędy przywracania
 i odróżnia niedostępność od pustki. Szczegóły: [today-settings.md](../architecture/today-settings.md).

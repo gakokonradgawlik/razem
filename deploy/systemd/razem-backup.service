@@ -1,0 +1,14 @@
+[Unit]
+Description=Razem: verified local SQLite backup and retention
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+# Example deployment checkout; set the actual path in an override during installation.
+WorkingDirectory=/opt/razem
+UMask=0077
+# installation.env must already exist, owned by the app user and mode 0600.
+# It holds the complete deployed configuration, including VAPID when enabled.
+ExecStart=/usr/bin/docker compose -f deploy/compose.yaml exec -T app node apps/server/dist/admin.js backup --config-file /data/installation.env
+TimeoutStartSec=30min

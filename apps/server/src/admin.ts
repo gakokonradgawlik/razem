@@ -9,6 +9,7 @@ import { argon2ParamsFromEnv, hashPassword } from './auth/passwords.js';
 import { AuthError, AuthService } from './auth/service.js';
 import type { AuthConfig } from './auth/service.js';
 import { openMigratedDatabase, serverSettings } from './config.js';
+import { BACKUP_COMMANDS, runBackupCommand } from './backup/cli.js';
 
 // Local administrator CLI. Passwords are read from stdin only (hidden on a terminal),
 // never accepted as arguments or environment variables and never printed.
@@ -48,6 +49,9 @@ const USAGE = `Użycie: razem-admin <polecenie>
   revoke-sessions <login>  wyloguj konto na wszystkich urządzeniach
   migrate                  zastosuj oczekujące migracje (z kopią przed zmianą)
   status                   wersja schematu i liczba kont
+  backup [opcje]           lokalna kopia + retencja 7 dziennych i 4 tygodniowe
+  backup-encrypt [opcje]   zaszyfruj kopię do samodzielnego przeniesienia
+  restore [opcje]          odtwórz wyłącznie do nowego katalogu
   measure-argon2           zmierz czas Argon2id dla bieżących parametrów
 `;
 
@@ -56,6 +60,7 @@ export async function runAdmin(argv: string[], io: AdminIo, options: { env?: Nod
   const [command, argument] = argv;
   const say = (line: string) => io.output.write(`${line}\n`);
   if (!command || command === 'help' || command === '--help') { io.error.write(USAGE); return command ? 0 : 2; }
+  if (BACKUP_COMMANDS.some((c) => c === command)) return runBackupCommand(argv, io, serverSettings(env).databasePath);
   if (!['bootstrap', 'reset-password', 'revoke-sessions', 'migrate', 'status', 'measure-argon2'].includes(command)) {
     io.error.write(USAGE);
     return 2;

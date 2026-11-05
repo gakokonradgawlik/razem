@@ -36,3 +36,4 @@ export * as schema from './schema.js';
 export * from './accounts.js';
 export * from './records.js';
 export * from './sync-store.js';
+export * from './snapshot.js';

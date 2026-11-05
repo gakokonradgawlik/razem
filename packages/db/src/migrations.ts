@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { snapshotSqlite } from './snapshot.js';
 import type BetterSqlite3 from 'better-sqlite3';
 
 export interface Migration { version: number; name: string; sql: string }
@@ -402,8 +403,7 @@ export function migrate(sqlite: BetterSqlite3.Database, options: MigrateOptions 
   if (status.current > 0 && options.backupPath) {
     backup = options.backupPath(status.current);
     if (existsSync(backup)) throw new MigrationError('Plik kopii przed migracją już istnieje');
-    sqlite.prepare('VACUUM INTO ?').run(backup);
-    chmodSync(backup, 0o600);
+    snapshotSqlite(sqlite, backup);
   }
   const applied: number[] = [];
   for (const migration of list.filter((m) => status.pending.includes(m.version))) {

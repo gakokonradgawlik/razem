@@ -233,3 +233,15 @@ it('kalendarz v2 → aktualny: date-only, 29.02 bez roku, przypomnienie i ACL pr
   expect(db.sqlite.pragma('foreign_key_check')).toEqual([]); expect(db.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
   expect(() => db.sqlite.prepare("UPDATE reminders SET visibility = 'shared' WHERE id = ?").run(R)).toThrow();
 });
+
+it('niespójne FK w snapshotcie blokuje migrację przed SQL; nie pozostawia błędnego archiwum', () => {
+  const { db, dir } = tempDb();
+  migrate(db.sqlite, { list: migrations.slice(0, 3) }); seedAccounts(db);
+  db.sqlite.pragma('foreign_keys = OFF');
+  db.sqlite.prepare('INSERT INTO devices VALUES (?, ?, ?, ?, ?)').run(C, C, 'syntetyczny osierocony rekord', T, T);
+  const backup = join(dir, 'invalid-pre-v3.sqlite');
+  expect(() => migrate(db.sqlite, { backupPath: () => backup })).toThrow(/integralności/);
+  expect(existsSync(backup)).toBe(false);
+  expect(migrationStatus(db.sqlite).current).toBe(3);
+  expect(db.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'task_events'").get()).toBeUndefined();
+});

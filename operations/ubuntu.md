@@ -2,7 +2,7 @@
 # Razem — Ubuntu, HTTPS i utrzymanie
 ## Docelowy pakiet
 Docker Compose: app (zbudowany frontend i API), worker, trwały lokalny wolumen SQLite /data. Opcjonalny profil Caddy jeżeli nie istnieje reverse proxy. Obrazy przypięte wersjami; procesy non-root, restart policy, health/readiness, kontrolowane limity i rotacja logów.
-Wariant domyślny bezpieczny do testów: app wystawiona tylko na 127.0.0.1:3000; brak bazy i paneli admin w sieci. Proxy kieruje /api i UI pod jednym originem. Sprawdzaj zajęte porty i istniejące konfiguracje zamiast nadpisywać cudze usługi. SQLite musi być na dysku lokalnym, nie NFS/SMB.
+Wariant domyślny bezpieczny do testów: app wystawiona tylko na 127.0.0.1:3100; brak bazy i paneli admin w sieci. Proxy kieruje /api i UI pod jednym originem. Sprawdzaj zajęte porty i istniejące konfiguracje zamiast nadpisywać cudze usługi. SQLite musi być na dysku lokalnym, nie NFS/SMB.
 
 ## Dostęp i pierwsze wdrożenie
 Najpierw get_project_installation i istniejące ustawienia ToDo; użyj uprawnionego dostępu do Ubuntu i wykonaj read-only preflight: system/architektura, Docker Compose, dysk, porty, proxy, DNS i TLS. Nie wpisuj fikcyjnego hosta ani adresu wdrożenia.
@@ -30,3 +30,13 @@ Referencja: https://www.sqlite.org/backup.html
 ## Zakończenie
 Dodaj prawdziwy wpis Deployment dopiero po weryfikacji działającego adresu. Zapisz wersję/commit, katalog, nazwy usług, adres, backup, porty i komendy stop/restore w ToDo. Nie publikuj sekretów. Zachowaj produkcję; usuwaj tylko własne tymczasowe zasoby testowe.
 
+
+## Dostarczone w RAZ-13
+
+CLI `backup|backup-encrypt|restore`, kontrola integralności/FK, retencja, szablony
+systemd i izolowany restore ze snapshotów migracji: [backup.md](backup.md).
+Restore odwołuje wszystkie sesje i subskrypcje push, rotuje cursor key i nie
+nadpisuje istniejącego katalogu. Kompletna konfiguracja (w tym VAPID) jest dołączana
+przez jawny `--config-file`; lokalny backup bez tego pliku nie zabezpiecza sekretów
+poza SQLite. RPO 24 h dotyczy zsynchronizowanych danych przy działającym timerze;
+nie obejmuje pending/konfliktów telefonów. Timer dostarczony, nie zainstalowany.

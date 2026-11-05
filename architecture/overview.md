@@ -48,3 +48,12 @@ Szczegóły synchronizacji: architecture/sync.md.
 - Service Worker: https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API
 Źródła stanowią punkt odniesienia; RAZ-1 sprawdza kompatybilność faktycznych wydań, nie przyjmuje numerów wersji z pamięci.
 
+
+## Eksport i backup — RAZ-13
+
+Działa `/api/export` z tą samą polityką ACL i atomowy lokalny eksport pending v2.
+CLI `backup|backup-encrypt|restore` zapewnia VACUUM INTO z integrity/FK check,
+manifesty/SHA-256, 7 dziennych + 4 tygodniowe, szyfrowany plik przenośny i izolowany
+restore bez nadpisania. Snapshot przed migracją również jest weryfikowany przed SQL.
+Restore usuwa sesje/subskrypcje push i rotuje cursor key; outbox telefonu pozostaje.
+Szczegóły, konfiguracja/VAPID, RPO i timer: [backup.md](../operations/backup.md).
