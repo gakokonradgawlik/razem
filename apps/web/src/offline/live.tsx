@@ -108,11 +108,22 @@ export function servicesFor(controller: AppController, snapshot: Snapshot): AppS
     },
     resolveConflict: async (id, resolution) => done(await command((s) => s.resolve(id, resolution))),
     discardRejected: async (id) => done(await command((s) => s.discardRejected(id))),
+    exportAccount: async () => {
+      const s = store();
+      if (!s || !account) return { ok: false, reason: 'account_changed' };
+      try {
+        const data = await controller.api.exportAccount(account.userId);
+        if (store() !== s) return { ok: false, reason: 'account_changed' };
+        download(`razem-konto-${data.exportedAt.slice(0, 10)}.json`, JSON.stringify(data, null, 2));
+        return { ok: true };
+      } catch { return { ok: false, reason: 'unavailable' }; }
+    },
     exportPending: async () => {
       const s = store();
       if (!s || !account) return { ok: false, reason: 'storage_unavailable' };
       try {
         const data = await s.exportPending(account.login);
+        if (store() !== s) return { ok: false, reason: 'account_changed' };
         download(`razem-niewyslane-zmiany-${data.exportedAt.slice(0, 10)}.json`, JSON.stringify(data, null, 2));
         return { ok: true };
       } catch { return { ok: false, reason: 'storage_unavailable' }; }

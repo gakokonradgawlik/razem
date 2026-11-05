@@ -9,6 +9,7 @@ import type { AuthConfig } from './auth/service.js';
 import { registerSync } from './sync/http.js';
 import { SyncService } from './sync/service.js';
 import type { SyncConfig } from './sync/service.js';
+import { registerExport } from './export.js';
 
 export interface AppOptions {
   database: Database;
@@ -66,6 +67,7 @@ export async function buildApp(options: AppOptions) {
     ...(options.publicOrigin ? { publicOrigin: options.publicOrigin } : {}),
   });
   registerSync(app, sync);
+  registerExport(app, options.database, auth);
   app.all('/api/*', async (_request, reply) => reply.code(404).send(apiErrorSchema.parse({ error: 'not_found' })));
   app.setErrorHandler((error, _request, reply) => {
     const status = typeof error === 'object' && error !== null && 'statusCode' in error && typeof error.statusCode === 'number' ? error.statusCode : 500;

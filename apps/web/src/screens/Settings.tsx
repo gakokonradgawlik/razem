@@ -20,6 +20,14 @@ export function SettingsScreen() {
   const sync = useSyncState();
   const [message, setMessage] = useState<{ tone: 'danger' | 'success'; text: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportAccount = async () => {
+    setExporting(true);
+    try {
+      const result = await services.exportAccount?.();
+      setMessage(!result ? null : result.ok ? { tone: 'success', text: 'Pobrano eksport danych z serwera. Niewysłane zmiany pobierz osobno.' } : { tone: 'danger', text: 'Nie udało się pobrać eksportu. Sprawdź połączenie i zaloguj się ponownie, jeśli sesja wygasła.' });
+    } finally { setExporting(false); }
+  };
   const attention = services.attentionCount ?? 0;
   const exportPending = async () => {
     const result = await services.exportPending?.();
@@ -56,10 +64,10 @@ export function SettingsScreen() {
       <Section title="Powiadomienia">
         <List><ListRow to="/ustawienia/powiadomienia" disabled={!session} icon="bell" iconTone="red" title="Preferencje powiadomień" detail="Wysyłka będzie dostępna w kolejnej wersji" /></List>
       </Section>
-      <Section title="Dane">
+      <Section title="Dane" footer="Pliki eksportu zawierają prywatne treści. Przechowuj je w bezpiecznym miejscu. Kopia serwera nie zawiera niewysłanych zmian ani konfliktów telefonu.">
         <StorageNotice />
         <List>
-          <ListRow disabled icon="download" iconTone="gray" title="Eksport wszystkich moich i wspólnych danych" detail="Niedostępny w tej wersji. Możesz pobrać niewysłane zmiany poniżej." />
+          <ListRow disabled={!session || !services.exportAccount || exporting} onClick={() => void exportAccount()} icon="download" iconTone="green" title={exporting ? 'Pobieranie eksportu…' : 'Eksport wszystkich moich i wspólnych danych'} detail="JSON z serwera, także kosz. Wymaga internetu. Niewysłane zmiany pobierz osobno." />
           {session && services.exportPending
             ? <ListRow onClick={() => void exportPending()} icon="download" iconTone="green" title="Eksport niewysłanych zmian" detail={services.pendingChanges ? `Zmiany tylko na tym urządzeniu: ${services.pendingChanges}` : 'Brak niewysłanych zmian'} />
             : <ListRow icon="download" iconTone="green" title="Eksport niewysłanych zmian" value="Niedostępne" detail="Wymaga zalogowania" />}

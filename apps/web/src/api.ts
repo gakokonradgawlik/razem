@@ -1,7 +1,7 @@
 // HTTP client of the PWA. Every request has a time limit; the caller decides what a
 // failure means. A response is never interpreted as success unless it parses with the
 // shared contract. The fetcher is injectable so tests talk to the real Fastify app.
-import { PROTOCOL_VERSION, SYNC_PROTOCOL_HEADER, SYNC_ACCOUNT_HEADER, apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema, settingsSchema, settingsPatchSchema } from '@razem/contracts';
+import { accountExportSchema, PROTOCOL_VERSION, SYNC_PROTOCOL_HEADER, SYNC_ACCOUNT_HEADER, apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema, settingsSchema, settingsPatchSchema } from '@razem/contracts';
 import type { MeResponse, PullResponse, PushRequest, PushResponse, SettingsPatch } from '@razem/contracts';
 
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
@@ -62,6 +62,11 @@ export class Api {
     return parsed.data;
   }
 
+  async exportAccount(account: string) {
+    const result = this.parse(accountExportSchema, await this.request('/api/export', { headers: { [SYNC_ACCOUNT_HEADER]: account } }));
+    if (result.account.id !== account || result.settings.userId !== account) throw new ApiError('account_mismatch');
+    return result;
+  }
   async health() { return this.parse(healthSchema, await this.request('/healthz')); }
   async me(): Promise<MeResponse> { return this.parse(meResponseSchema, await this.request('/api/me')); }
   async settings(account: string, abort?: AbortSignal, patch?: SettingsPatch) {
