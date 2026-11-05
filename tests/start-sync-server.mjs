@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { buildApp } from '../apps/server/dist/app.js';
 import { hashPassword } from '../apps/server/dist/auth/passwords.js';
 import { migrate, openDatabase } from '../packages/db/dist/index.js';
+import webpush from 'web-push';
 import { buildPwa } from '../scripts/build-pwa.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'razem-e2e-sync-'));
@@ -22,7 +23,8 @@ user.run('00000000-0000-4000-8000-0000000000bb', household, 'tomek@example.test'
 
 // PWA tests use two independently switchable origins (one per browser project).
 const pwa = process.argv[2] === '--pwa';
-const port = pwa || process.argv[2] === '--port' ? Number(process.argv[3]) : 4319;
+const push = process.argv[2] === '--push';
+const port = pwa || push || process.argv[2] === '--port' ? Number(process.argv[3]) : 4319;
 const webRoot = pwa ? resolve(directory, 'web') : resolve('apps/web/dist');
 if (pwa) {
   for (const release of ['A', 'B']) {
@@ -41,7 +43,8 @@ if (pwa) {
   }
   await cp(resolve(directory, 'A'), webRoot, { recursive: true });
 }
-const app = await buildApp({ database, secureCookies: false, publicOrigin: `http://127.0.0.1:${port}`, webRoot });
+const vapid = push ? { ...webpush.generateVAPIDKeys(), subject: 'mailto:synthetic@example.test' } : undefined;
+const app = await buildApp({ ...(vapid ? { vapid } : {}), database, secureCookies: false, publicOrigin: `http://127.0.0.1:${port}`, webRoot });
 if (pwa) {
   let unavailable = false;
   app.addHook('onRequest', async (request, reply) => {

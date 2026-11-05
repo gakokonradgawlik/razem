@@ -33,23 +33,35 @@ export class ReminderWorker {
   private key(spec: Spec, subscription: string) {
     return hash([subscription, spec.type, spec.target.id, spec.target.version, spec.kind, spec.at, spec.kind === 'assignment' ? null : spec.sequence, spec.revision]);
   }
-  private schedules(scope: AccountScope, now: string): Spec[] {
+  private schedules(scope: AccountScope, now: string, targetId?: string, scheduledAt?: string): Spec[] {
     const result: Spec[] = [];
     const settings = this.accounts.settings(this.accounts.userById(scope.userId)!);
     const prefs = settings.notifications;
     const members = settings.members.map((m) => m.id);
-    const reminders = this.records.list(scope, 'reminder').filter((r) => r.entityType === 'reminder');
+    const allReminders = this.records.list(scope, 'reminder').filter((r) => r.entityType === 'reminder')
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+    // Legacy clients could store several configurations. The newest one governs a target.
+    const reminders = allReminders.filter((r, index) => allReminders.findIndex((other) => other.data.targetType === r.data.targetType && other.data.targetId === r.data.targetId) === index);
     const inWindow = (at: string) => Date.parse(at) >= Date.parse(now) - DAY && Date.parse(at) <= Date.parse(now) + 32 * DAY;
     for (const task of this.records.list(scope, 'task')) {
-      if (task.entityType !== 'task' || task.data.completedAt || !taskRecipients(task, members).includes(scope.userId) || prefs.taskReminders === false) continue;
+      if ((targetId && task.id !== targetId) || task.entityType !== 'task' || task.data.completedAt || !taskRecipients(task, members).includes(scope.userId) || prefs.taskReminders === false) continue;
       const config = reminders.filter((r) => r.data.targetType === 'task' && r.data.targetId === task.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))[0];
       if (config && !config.data.enabled) continue;
       const completed = new Set(this.records.list(scope, 'task_occurrence').filter((r) => r.entityType === 'task_occurrence' && r.data.taskId === task.id && r.data.completedAt).map((r) => r.entityType === 'task_occurrence' ? r.data.occurrenceKey : ''));
       const dues = [];
       if (task.data.recurrence) {
-        const day = Temporal.PlainDate.from(localDate(now, task.data.timezone)).subtract({ days: 2 });
-        for (let offset = 0; offset < 43; offset++) {
-          const key = day.add({ days: offset }).toString();
+        const minutes = config?.data.minutesBefore ?? prefs.taskMinutesBefore ?? 0;
+        let keys: string[];
+        if (scheduledAt) {
+          // Validate only the claimed occurrence, including historical timezone segments.
+          const base = iso(Date.parse(scheduledAt) + minutes * 60_000);
+          const zones = new Set([task.data.timezone, ...(task.data.recurrence.history ?? []).map((segment) => segment.timezone)]);
+          keys = [...new Set([...zones].map((zone) => localDate(base, zone)))];
+        } else {
+          const day = Temporal.PlainDate.from(localDate(iso(Date.parse(now) + minutes * 60_000), task.data.timezone)).subtract({ days: 2 });
+          keys = Array.from({ length: 43 }, (_, offset) => day.add({ days: offset }).toString());
+        }
+        for (const key of keys) {
           if (!completed.has(key)) { const due = taskOccurrence(task.data, key); if (due) dues.push(due); }
         }
       } else dues.push(task.data);
@@ -58,11 +70,11 @@ export class ReminderWorker {
         if (!base) continue;
         const at = iso(Date.parse(base) - (config?.data.minutesBefore ?? prefs.taskMinutesBefore ?? 0) * 60_000);
         if (inWindow(at)) result.push({ type: 'task', target: task, kind: 'reminder', at, sequence: null,
-          revision: [config?.id, config?.version, prefs.taskReminderTime ?? '09:00', prefs.taskMinutesBefore ?? 0, 'occurrenceKey' in due ? due.occurrenceKey : null] });
+          revision: [config?.id, config?.version, due.dueAt ? null : config?.data.localTime ?? prefs.taskReminderTime ?? '09:00', config?.data.minutesBefore ?? prefs.taskMinutesBefore ?? 0, 'occurrenceKey' in due ? due.occurrenceKey : null] });
       }
     }
     for (const config of reminders) {
-      if (!config.data.enabled || config.data.targetType === 'task') continue;
+      if ((targetId && config.data.targetId !== targetId) || !config.data.enabled || config.data.targetType === 'task') continue;
       const target = this.records.get(scope, config.data.targetType, config.data.targetId);
       if (!target || target.deletedAt || (target.entityType !== 'calendar_event' && target.entityType !== 'important_date')) continue;
       const year = Temporal.Instant.from(now).toZonedDateTimeISO(settings.household.timezone).year;
@@ -77,19 +89,21 @@ export class ReminderWorker {
   private eventSpec(scope: AccountScope, event: Event, kind: Kind, now: string): Spec | null {
     if (Date.parse(event.changed_at) < Date.parse(now) - DAY) return null;
     const type = kind === 'assignment' ? 'task' : event.entity_type!;
-    const target = this.records.get(scope, type, event.task_id ?? event.entity_id);
-    if (!target || target.deletedAt || target.version !== event.version) return null;
+    let target = this.records.get(scope, type, event.task_id ?? event.entity_id);
+    if (!target || target.version !== event.version) return null;
     const settings = this.accounts.settings(this.accounts.userById(scope.userId)!);
     if (target.entityType === 'task') {
+      if (target.deletedAt) return null;
       if (settings.notifications.taskAssignments === false || target.data.completedAt || !taskRecipients(target, settings.members.map((m) => m.id)).includes(scope.userId)) return null;
     } else {
       if (!settings.notifications.shoppingNotifications) return null;
       if (target.entityType === 'shopping_item') {
         const parent = this.records.get(scope, 'shopping_list', target.data.listId);
         if (!parent || parent.deletedAt) return null;
-      }
+        if (target.deletedAt) target = parent;
+      } else if (target.deletedAt) return null;
     }
-    return { type, target, kind, at: event.changed_at, sequence: event.sequence, revision: [] };
+    return { type: target.entityType, target, kind, at: event.changed_at, sequence: event.sequence, revision: [] };
   }
   /** Full startup scan plus transactional event checkpoints: restart never loses or repeats an insertion. */
   plan() {
@@ -112,6 +126,8 @@ export class ReminderWorker {
         for (const sub of subscriptions.filter((s) => s.user_id === userId)) for (const spec of specs) {
           // A new opt-in never gets old assignments or already elapsed reminders.
           if (spec.at < sub.created_at) continue;
+          // Editing a title/preference after a successful send must not repeat the same deadline.
+          if (spec.kind === 'reminder' && this.sql.prepare("SELECT 1 FROM reminder_dispatches WHERE subscription_id=? AND target_type=? AND target_id=? AND kind='reminder' AND scheduled_at=? AND state='sent'").get(sub.id, spec.type, spec.target.id, spec.at)) continue;
           this.sql.prepare(`INSERT INTO reminder_dispatches (id,subscription_id,user_id,target_type,target_id,kind,event_sequence,deduplication_key,scheduled_at,state,next_attempt_at)
             VALUES (?,?,?,?,?,?,?,?,?,'pending',?) ON CONFLICT(deduplication_key) DO UPDATE SET state='pending' WHERE reminder_dispatches.state='cancelled' AND reminder_dispatches.scheduled_at>?`)
             .run(randomUUID(), sub.id, userId, spec.type, spec.target.id, spec.kind, spec.sequence, this.key(spec, sub.id), spec.at, spec.at, now);
@@ -140,7 +156,7 @@ export class ReminderWorker {
     const scope = this.scope(job.user_id);
     if (!subscription || !scope || !pushEndpointSchema.safeParse(subscription.endpoint).success) return null;
     let specs: Spec[];
-    if (job.kind === 'reminder') specs = this.schedules(scope, now);
+    if (job.kind === 'reminder') specs = this.schedules(scope, now, job.target_id, job.scheduled_at);
     else {
       const event = this.sql.prepare(`SELECT * FROM ${job.kind === 'assignment' ? 'task_events' : 'sync_changes'} WHERE sequence=?`).get(job.event_sequence) as Event | undefined;
       const spec = event && this.eventSpec(scope, event, job.kind, now);

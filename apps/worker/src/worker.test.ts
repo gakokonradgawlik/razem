@@ -149,3 +149,34 @@ it('wiele urządzeń: deduplikacja per subskrypcja i przywrócenie wyłączonego
   accounts.updateSettings(accounts.userById(A.userId)!, { taskReminders: true }, clock().toISOString()); worker.plan(); expect(jobs().filter((j) => j.state === 'pending')).toHaveLength(2);
   due(); await worker.tick(); expect(send).toHaveBeenCalledTimes(2); worker.plan(); expect(jobs()).toHaveLength(2);
 });
+
+it('edycja tytułu po wysłaniu i zmiana godziny dla terminu godzinowego nie powtarzają tego samego przypomnienia', async () => {
+  const t = create('task', { ...task, dueDate: null, dueAt: '2026-11-05T08:00:00.000Z' }); due(); await worker.tick(); expect(send).toHaveBeenCalledTimes(1);
+  repo.update(A, { entityType: 'task', id: t.id, baseVersion: 1, patch: { title: 'Poprawiony' } });
+  const accounts = new AccountRepository(db); accounts.updateSettings(accounts.userById(A.userId)!, { taskReminderTime: '10:00' }, clock().toISOString());
+  await worker.tick(); expect(send).toHaveBeenCalledTimes(1); expect(jobs()).toHaveLength(1);
+});
+
+it('błąd zapisu kolejki cofa także checkpoint, po restarcie powstaje jedno przypisanie', async () => {
+  const accounts = new AccountRepository(db); accounts.updateSettings(accounts.userById(A.userId)!, { taskAssignments: true }, clock().toISOString());
+  create('task', { ...task, dueDate: null });
+  db.sqlite.exec("CREATE TRIGGER test_fail BEFORE INSERT ON reminder_dispatches BEGIN SELECT RAISE(ABORT,'synthetic'); END;");
+  expect(() => worker.plan()).toThrow('synthetic'); expect(db.sqlite.prepare('SELECT task_sequence FROM worker_state').get()).toEqual({ task_sequence: 0 });
+  expect(jobs()).toHaveLength(0); db.sqlite.exec('DROP TRIGGER test_fail');
+  await new ReminderWorker(db, send, clock).tick(); expect(jobs()).toHaveLength(1); expect(send).toHaveBeenCalledTimes(1);
+});
+
+it('kilka starych konfiguracji tego samego kalendarza daje jedno przypomnienie', async () => {
+  const event = create('calendar_event', { title: 'Test', description: '', allDay: true, timezone: 'Europe/Warsaw', startDate: '2026-11-05', endDate: '2026-11-06', startAt: null, endAt: null });
+  for (let n = 0; n < 2; n++) create('reminder', { targetType: 'calendar_event', targetId: event.id, enabled: true, minutesBefore: 0, localTime: '09:00' });
+  due(); await worker.tick(); expect(jobs()).toHaveLength(1); expect(send).toHaveBeenCalledTimes(1);
+});
+
+it('opcjonalne usunięcie produktu prowadzi do żywej listy, nadal z ACL rodzica', async () => {
+  const accounts = new AccountRepository(db); accounts.updateSettings(accounts.userById(B.userId)!, { shoppingNotifications: true }, clock().toISOString());
+  const list = create('shopping_list', { name: 'Lista' }, 'shared');
+  const item = create('shopping_item', { listId: list.id, name: 'Produkt', quantity: '', note: '', checked: false, sortKey: 0 }, 'shared');
+  worker.plan(); await worker.tick(); send.mockClear(); now += 1000;
+  repo.remove(A, { entityType: 'shopping_item', id: item.id, baseVersion: 1 }); await worker.tick();
+  expect(send).toHaveBeenCalledTimes(1); expect(send.mock.calls[0]).toMatchObject([{ user_id: B.userId }, { url: `/powiadomienie/shopping_list/${list.id}` }]);
+});

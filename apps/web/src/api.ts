@@ -1,8 +1,8 @@
 // HTTP client of the PWA. Every request has a time limit; the caller decides what a
 // failure means. A response is never interpreted as success unless it parses with the
 // shared contract. The fetcher is injectable so tests talk to the real Fastify app.
-import { accountExportSchema, PROTOCOL_VERSION, SYNC_PROTOCOL_HEADER, SYNC_ACCOUNT_HEADER, apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema, settingsSchema, settingsPatchSchema } from '@razem/contracts';
-import type { MeResponse, PullResponse, PushRequest, PushResponse, SettingsPatch } from '@razem/contracts';
+import { NOTIFICATION_SETTINGS_HEADER, pushConfigSchema, pushStatusSchema, pushSubscribeSchema, accountExportSchema, PROTOCOL_VERSION, SYNC_PROTOCOL_HEADER, SYNC_ACCOUNT_HEADER, apiErrorSchema, healthSchema, meResponseSchema, pullResponseSchema, pushRequestSchema, pushResponseSchema, settingsSchema, settingsPatchSchema } from '@razem/contracts';
+import type { PushSubscribe, EntityType, MeResponse, PullResponse, PushRequest, PushResponse, SettingsPatch } from '@razem/contracts';
 
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 export type ApiFailure =
@@ -62,8 +62,26 @@ export class Api {
     return parsed.data;
   }
 
+  async pushConfig(account: string) {
+    return this.parse(pushConfigSchema, await this.request('/api/push/config', { headers: { [SYNC_ACCOUNT_HEADER]: account } }));
+  }
+  async pushStatus(account: string, device: string) {
+    return this.parse(pushStatusSchema, await this.request(`/api/push/devices/${device}`, { headers: { [SYNC_ACCOUNT_HEADER]: account } }));
+  }
+  async subscribePush(account: string, input: PushSubscribe) {
+    return this.parse(pushStatusSchema, await this.request('/api/push/subscription', { method: 'PUT', body: JSON.stringify(pushSubscribeSchema.parse(input)), headers: { [SYNC_ACCOUNT_HEADER]: account } }));
+  }
+  async removePush(account: string, device: string) {
+    await this.request(`/api/push/devices/${device}`, { method: 'DELETE', body: '{}', headers: { [SYNC_ACCOUNT_HEADER]: account } });
+  }
+  async resolvePush(account: string, entityType: EntityType, id: string): Promise<string> {
+    const result = await this.request('/api/push/resolve', { method: 'POST', body: JSON.stringify({ entityType, id }), headers: { [SYNC_ACCOUNT_HEADER]: account } });
+    if (!result || typeof result !== 'object' || !('path' in result) || typeof result.path !== 'string'
+      || !/^\/(zadania|kalendarz|wazne-daty|zakupy)\/[0-9a-f-]{36}$/.test(result.path)) throw new ApiError('invalid_response');
+    return result.path;
+  }
   async exportAccount(account: string) {
-    const result = this.parse(accountExportSchema, await this.request('/api/export', { headers: { [SYNC_ACCOUNT_HEADER]: account } }));
+    const result = this.parse(accountExportSchema, await this.request('/api/export', { headers: { [SYNC_ACCOUNT_HEADER]: account, [NOTIFICATION_SETTINGS_HEADER]: '1' } }));
     if (result.account.id !== account || result.settings.userId !== account) throw new ApiError('account_mismatch');
     return result;
   }
@@ -71,7 +89,7 @@ export class Api {
   async me(): Promise<MeResponse> { return this.parse(meResponseSchema, await this.request('/api/me')); }
   async settings(account: string, abort?: AbortSignal, patch?: SettingsPatch) {
     const result = this.parse(settingsSchema, await this.request('/api/settings', {
-      headers: { [SYNC_ACCOUNT_HEADER]: account },
+      headers: { [SYNC_ACCOUNT_HEADER]: account, [NOTIFICATION_SETTINGS_HEADER]: '1' },
       ...(patch ? { method: 'PATCH', body: JSON.stringify(settingsPatchSchema.parse(patch)) } : {}),
     }, abort));
     if (result.userId !== account) throw new ApiError('account_mismatch');

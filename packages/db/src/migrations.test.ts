@@ -245,3 +245,19 @@ it('niespójne FK w snapshotcie blokuje migrację przed SQL; nie pozostawia bł�
   expect(migrationStatus(db.sqlite).current).toBe(3);
   expect(db.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'task_events'").get()).toBeUndefined();
 });
+
+it('v4 → v5 zachowuje domenę, sesje i preferencje; unieważnia niesprawdzone stare subskrypcje i pusty szkielet dispatch', () => {
+  const { db, dir } = tempDb(); migrate(db.sqlite, { list: migrations.slice(0, 4) }); seedAccounts(db);
+  db.sqlite.prepare("INSERT INTO notes VALUES (?,?,?,'private',1,?,?,NULL,'SECRET','')").run(C, H, A, T, T);
+  db.sqlite.prepare("INSERT INTO preferences VALUES (?,'Europe/Warsaw','dark',1,1,1,?)").run(A, T);
+  db.sqlite.prepare("INSERT INTO devices VALUES (?,?,'Test',?,?)").run(C, A, T, T);
+  db.sqlite.prepare("INSERT INTO push_subscriptions VALUES (?,?,?,'https://web.push.apple.com/legacy','synthetic','synthetic',NULL,?)").run(C, A, C, T);
+  const before = db.sqlite.prepare('SELECT * FROM notes').all();
+  const backup = join(dir, 'pre-v4.sqlite'); expect(migrate(db.sqlite, { backupPath: () => backup })).toEqual({ applied: [5], backup });
+  expect(db.sqlite.prepare('SELECT * FROM notes').all()).toEqual(before);
+  expect(db.sqlite.prepare('SELECT count(*) n FROM sessions').get()).toEqual({ n: 1 });
+  expect(db.sqlite.prepare('SELECT include_titles,shopping_notifications,task_reminders,task_reminder_time,task_minutes_before FROM preferences').get())
+    .toEqual({ include_titles: 1, shopping_notifications: 1, task_reminders: 1, task_reminder_time: '09:00', task_minutes_before: 0 });
+  expect(db.sqlite.prepare('SELECT count(*) n FROM push_subscriptions').get()).toEqual({ n: 0 });
+  expect(db.sqlite.pragma('foreign_key_check')).toEqual([]); expect(db.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
+});

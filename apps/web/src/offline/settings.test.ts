@@ -33,7 +33,7 @@ it('HTTP ustawień: sesja, CSRF, konto tego żądania, strict patch, bez cudzych
   expect(response.json().members).toContainEqual({ id: ACCOUNTS.a.id, displayName: 'Moja nazwa' });
   expect(JSON.stringify(response.json())).not.toMatch(/password|token|hash|login/i);
   const other = new Phone(server), b = await signed(other, 'b');
-  expect(b.getSnapshot().settings?.notifications).toEqual({ includeTitles: false, shoppingNotifications: false });
+  expect(b.getSnapshot().settings?.notifications).toEqual({ includeTitles: false, shoppingNotifications: false, taskReminders: true, taskReminderTime: '09:00', taskMinutesBefore: 0, taskAssignments: true });
   expect(b.getSnapshot().settings?.household.timezone).toBe('Pacific/Kiritimati');
   expect((await server.app.inject({ method: 'POST', url: '/api/auth/logout', headers: { ...headers, cookie: other.network.cookie! }, payload: {} })).statusCode).toBe(409);
 });
@@ -56,7 +56,7 @@ it('profil i strefa przetrwają restart offline, nie zmieniają rekordów/outbox
   const b = await signed(new Phone(server), 'b');
   expect(await b.store!.list('task')).toHaveLength(0);
   expect(b.getSnapshot().settings?.members).toContainEqual({ id: ACCOUNTS.a.id, displayName: 'Nowa nazwa' });
-  expect(b.getSnapshot().settings?.notifications).toEqual({ includeTitles: false, shoppingNotifications: false });
+  expect(b.getSnapshot().settings?.notifications).toEqual({ includeTitles: false, shoppingNotifications: false, taskReminders: true, taskReminderTime: '09:00', taskMinutesBefore: 0, taskAssignments: true });
 });
 
 it('odpowiedź ustawień starego konta i stare callbacki nie trafiają do nowego konta', async () => {

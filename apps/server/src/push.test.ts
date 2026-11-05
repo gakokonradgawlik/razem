@@ -96,3 +96,46 @@ it('VAPID walidowane bez ujawniania sekretów; transport szyfruje i podpisuje st
   { title: 'Razem', body: 'Masz przypomnienie w Razem', tag: 'test', url: '/' });
   expect(spy).toHaveBeenCalledTimes(1);
 });
+
+it('integracja HTTP sync → SQLite → worker → urządzenie: prywatność, retry mutacji i aktualna sesja', async () => {
+  const { ReminderWorker } = await import('../../worker/src/worker.js');
+  await subscribe(); await subscribe(b, cookieB, randomUUID(), { ...subscription, endpoint: 'https://web.push.apple.com/b' });
+  await app.inject({ method: 'PATCH', url: '/api/settings', headers: headers(), payload: { taskAssignments: false } });
+  const at = Date.now() + 1000, target = randomUUID();
+  const mutation = { clientMutationId: randomUUID(), entityId: target, entityType: 'task', command: 'create', baseVersion: 0, visibility: 'private',
+    data: { title: 'NEVER ON LOCKSCREEN', description: 'SECRET', assignee: 'self', dueDate: null, dueAt: new Date(at).toISOString(), timezone: 'Europe/Warsaw', completedAt: null, recurrence: null } };
+  const payload = { protocolVersion: 2, deviceId: randomUUID(), mutations: [mutation] };
+  for (let retry = 0; retry < 2; retry++) {
+    const response = await app.inject({ method: 'POST', url: '/api/sync/push', headers: headers(), payload });
+    expect(response.json().results[0].status).toBe('ack');
+  }
+  const send = vi.fn(async () => undefined);
+  const worker = new ReminderWorker(db, send, () => new Date(at + 1000));
+  await worker.tick(); await worker.tick(); expect(send).toHaveBeenCalledTimes(1);
+  expect(send.mock.calls[0]).toMatchObject([{ user_id: a }, { body: 'Masz przypomnienie w Razem', url: `/powiadomienie/task/${target}` }]);
+  expect(db.sqlite.prepare('SELECT count(*) n FROM reminder_dispatches').get()).toEqual({ n: 1 });
+});
+
+it('starsza zainstalowana PWA zachowuje strict kontrakt ustawień i eksportu; rozszerzenie wymaga nagłówka', async () => {
+  for (const url of ['/api/settings', '/api/export']) {
+    const old = await app.inject({ url, headers: headers() });
+    const oldSettings = url === '/api/settings' ? old.json() : old.json().settings;
+    expect(oldSettings.notifications).toEqual({ includeTitles: false, shoppingNotifications: false });
+    const current = await app.inject({ url, headers: { ...headers(), 'x-razem-notifications': '1' } });
+    const settings = url === '/api/settings' ? current.json() : current.json().settings;
+    expect(settings.notifications).toMatchObject({ taskReminders: true, taskReminderTime: '09:00', taskMinutesBefore: 0, taskAssignments: true });
+  }
+});
+
+it('zmiana konta przez login odpina push poprzedniej sesji przeglądarki, zachowując inne urządzenie', async () => {
+  await subscribe();
+  const auth = new AuthService(db, { argon2: FAST });
+  const other = await auth.login('alpha@example.test', 'Tymczasowe-A-2026!', '127.0.0.1');
+  const otherCookie = `__Host-razem_session=${other.token}`;
+  await subscribe(a, otherCookie, randomUUID(), { ...subscription, endpoint: 'https://web.push.apple.com/other-device' });
+  expect(db.sqlite.prepare('SELECT count(*) n FROM push_subscriptions').get()).toEqual({ n: 2 });
+  const result = await app.inject({ method: 'POST', url: '/api/auth/login', headers: headers(), payload: { login: 'beta@example.test', password: 'Tymczasowe-B-2026!' } });
+  expect(result.statusCode).toBe(200);
+  expect(db.sqlite.prepare('SELECT endpoint FROM push_subscriptions').all()).toEqual([{ endpoint: 'https://web.push.apple.com/other-device' }]);
+  expect((await app.inject({ url: '/api/me', headers: headers() })).statusCode).toBe(200);
+});

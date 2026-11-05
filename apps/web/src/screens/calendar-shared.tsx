@@ -26,13 +26,13 @@ export function ReminderFields({ value, onChange, timed = false }: { value: Remi
         options={Array.from(new Set([0, 15, 30, 60, 1440, 10080, value.minutesBefore])).sort((a,b) => a-b).map((minutes) => ({ value: String(minutes), label: minutes === 0 ? 'W dniu / o godzinie początku' : minutes % 1440 === 0 ? `${minutes / 1440} dni wcześniej` : `${minutes} min wcześniej` }))} />
       {!timed && <DateField label="Godzina przypomnienia" type="time" value={value.localTime ?? '09:00'} onValue={(localTime) => onChange({ ...value, localTime })} />}
     </>}
-    <p className="field__hint">Ustawienie zapisuje się na tym urządzeniu. Powiadomienia nie są jeszcze wysyłane; ich obsługa pojawi się w kolejnej wersji. Brak alarmu offline.</p>
+    <p className="field__hint">Ustawienie zapisuje się offline. Po synchronizacji serwer wyśle przypomnienie na urządzenia z włączonymi powiadomieniami. Nie gwarantujemy alarmu offline.</p>
   </div>;
 }
 export function ReminderDetail({ type, id }: { type: 'calendar_event' | 'important_date'; id: string }) {
   const [state] = useRecords('reminder', id);
   const enabled = state.status === 'ok' ? state.value.find((r) => r.data.targetType === type && r.data.enabled) : undefined;
-  return <p className="section__footer">{state.status === 'loading' ? 'Wczytywanie przypomnienia…' : state.status !== 'ok' ? 'Nie można wczytać przypomnienia.' : enabled ? `Przypomnienie zapisane: ${enabled.data.minutesBefore} min wcześniej${enabled.data.localTime ? `, godz. ${enabled.data.localTime}` : ''}. Powiadomienia nie są jeszcze wysyłane.` : 'Bez przypomnienia.'}</p>;
+  return <p className="section__footer">{state.status === 'loading' ? 'Wczytywanie przypomnienia…' : state.status !== 'ok' ? 'Nie można wczytać przypomnienia.' : enabled ? `Przypomnienie zapisane: ${enabled.data.minutesBefore} min wcześniej${enabled.data.localTime ? `, godz. ${enabled.data.localTime}` : ''}. Wysyłka wymaga synchronizacji i włączonych powiadomień na urządzeniu.` : 'Bez przypomnienia.'}</p>;
 }
 export function useCalendarPersist<T extends 'calendar_event' | 'important_date'>(type: T, mode: FormMode<T>, initialReminder: ReminderConfig) {
   const services = useServices();

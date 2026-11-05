@@ -51,7 +51,7 @@ export function matchPath(pattern: string, path: string): Params | null {
   for (let index = 0; index < want.length; index++) {
     const segment = want[index]!, actual = have[index]!;
     if (segment.startsWith(':')) {
-      if (!UUID.test(actual)) return null;
+      if (segment === ':type' ? !['task','calendar_event','important_date','shopping_list','shopping_item'].includes(actual) : !UUID.test(actual)) return null;
       params[segment.slice(1)] = actual.toLowerCase();
     } else if (segment !== actual) return null;
   }

@@ -56,7 +56,7 @@ test('Dzisiaj + ustawienia: menu, prywatność, zimny start offline, motyw/stref
     await a.getByRole('link', { name: /Profil i domownicy/ }).click();
     await a.getByLabel('Twoja nazwa').fill(`Anna ${tag}`); await a.getByLabel('Strefa czasowa domu').fill('America/Los_Angeles'); await save(a, '/ustawienia');
     await a.getByRole('link', { name: /Preferencje powiadomień/ }).click();
-    await expect(a.getByRole('button', { name: /Włącz powiadomienia/ })).toBeDisabled();
+    await expect(a.getByText(/Powiadomienia wymagają konfiguracji na serwerze|Na iPhonie dodaj Razem|Ta przeglądarka nie obsługuje powiadomień|Zgoda na powiadomienia jest wyłączona/)).toBeVisible();
     await a.getByRole('switch', { name: /^Tytuły na ekranie blokady/ }).check(); await save(a, '/ustawienia');
     const day = await a.evaluate(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()));
     await context.setOffline(true);
