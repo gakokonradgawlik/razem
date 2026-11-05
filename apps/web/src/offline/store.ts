@@ -8,12 +8,13 @@
 // - conflicts keep the local intent, its base and the server state until the user decides.
 import { calendarReminderId, taskOccurrence, taskOccurrenceId, taskDataSchema, validTaskScheduleChange, canReadRecord, IMMUTABLE_PARENT_FIELDS, mutationSchema, recordSchemaUnion } from '@razem/contracts';
 import type { AccountScope, EntityType, Mutation, PullResponse, PushResponse, SyncRecord } from '@razem/contracts';
-import type { CalendarSave } from '../services.js';
+import type { CalendarSave, NoteCopy } from '../services.js';
+import { idSchema } from '@razem/contracts';
 import { LocalDatabase, parentOf } from '../local-db.js';
 import type { Command, ConflictEntry, LocalRecord, QueueEntry, ServerState, Visibility } from '../local-db.js';
 
 /** account_changed: the command was started for an account that is no longer open here (controller). */
-export type StoreFailure = 'storage_full' | 'storage_unavailable' | 'not_found' | 'invalid' | 'conflict_open' | 'account_changed';
+export type StoreFailure = 'storage_full' | 'storage_unavailable' | 'not_found' | 'invalid' | 'conflict_open' | 'record_changed' | 'account_changed';
 export type StoreResult<T = undefined> = { ok: true; value: T } | { ok: false; reason: StoreFailure };
 export type MutationResult = PushResponse['results'][number];
 export type OkPull = Extract<PullResponse, { status: 'ok' }>;
@@ -193,9 +194,10 @@ export class LocalStore {
     });
   }
 
-  async update(entityType: EntityType, id: string, patch: Record<string, unknown>): Promise<StoreResult> {
+  async update(entityType: EntityType, id: string, patch: Record<string, unknown>, expectedData?: Record<string, unknown>): Promise<StoreResult> {
     return this.guarded(async () => {
       const record = await this.editable(entityType, id);
+      if (expectedData && (Object.keys(diffData(expectedData, record.data)).length || Object.keys(diffData(record.data, expectedData)).length)) throw new Abort('record_changed');
       const merged = { ...record.data, ...patch };
       const changed = diffData(record.data, merged);
       if (Object.keys(changed).length === 0) return { ok: true, value: undefined };
@@ -205,6 +207,24 @@ export class LocalStore {
       const base = await this.baseFor(record);
       await this.db.records.put({ ...record, data: merged, updatedAt: new Date().toISOString() });
       await this.enqueue({ entityType, entityId: id, parentId: record.parentId, command: 'update', patch: changed }, base);
+      return { ok: true, value: undefined };
+    });
+  }
+
+  /** Copy only the confirmed plain text. No reference to the private source is sent to sync. */
+  async shareNote({ sourceId, copyId, data }: NoteCopy): Promise<StoreResult> {
+    return this.guarded(async () => {
+      if (!idSchema.safeParse(copyId).success || sourceId === copyId || !validData('note', data, 'shared')) throw new Abort('invalid');
+      const source = await this.editable('note', sourceId);
+      if (source.visibility !== 'private' || source.ownerId !== this.scope.userId) throw new Abort('invalid');
+      const existing = await this.db.records.get(copyId);
+      if (existing) {
+        if (existing.entityType !== 'note' || existing.ownerId !== this.scope.userId || existing.visibility !== 'shared'
+          || existing.deletedAt !== null || Object.keys(diffData(existing.data, data)).length) throw new Abort('invalid');
+        return { ok: true, value: undefined };
+      }
+      const result = await this.createWithId('note', copyId, data, 'shared');
+      if (!result.ok) throw new Abort(result.reason);
       return { ok: true, value: undefined };
     });
   }

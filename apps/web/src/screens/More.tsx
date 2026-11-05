@@ -1,15 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { defaultVisibility, nextImportantOccurrence } from '@razem/contracts';
 import type { EntityType } from '@razem/contracts';
 import { AddButton, Button, EmptyState, Notice, List, ListRow, PrivacyPicker, PrivacyTag, ScreenHeader, Section, SelectField, TextArea, TextField } from '../ui/components.js';
 import { FormScreen, useFormValues } from '../ui/form.js';
 import type { Errors } from '../ui/form.js';
-import { pathFor, useParam } from '../router.js';
+import { navigate, pathFor, useParam } from '../router.js';
 import { failureMessage, useServices } from '../services.js';
-import type { TrashItem, Visibility } from '../services.js';
+import type { NoteCopy, TrashItem, Visibility } from '../services.js';
 import { contractData, maxText, requiredText } from './validation.js';
 import { formatDayMonth, isoDate, todayIn } from '../dates.js';
-import { DeleteRecord, DetailFields, EditLink, FixedPrivacy, LoadingNotice, RecordGate, loaded, persist, useLoad, useRecords } from './records.js';
+import { changedFields, DeleteRecord, DetailFields, EditLink, FixedPrivacy, LoadingNotice, MissingRecord, RecordGate, loaded, persist, useLoad, useRecord, useRecords } from './records.js';
 import type { FormMode, Typed } from './records.js';
 import { ReminderDetail, ReminderFields, ReminderGate, useCalendarPersist, useReminder, yearsLabel } from './calendar-shared.js';
 import type { ReminderConfig } from './calendar-shared.js';
@@ -74,13 +74,25 @@ type NoteForm = { title: string; body: string; visibility: Visibility };
 function NoteFormScreen({ mode }: { mode: FormMode<'note'> }) {
   const services = useServices();
   const editing = mode.kind === 'edit' ? mode.record : null;
+  // Keep the form's original base while live reads continue receiving remote edits.
+  const [base, setBase] = useState(editing);
+  const changedDuringEdit = !!base && !!editing && Object.keys(changedFields(base.data, editing.data)).length > 0;
   const { values, set } = useFormValues<NoteForm>({ title: editing?.data.title ?? '', body: editing?.data.body ?? '', visibility: editing?.visibility ?? defaultVisibility('note') });
   const [errors, setErrors] = useState<Errors<NoteForm>>({});
   const back = editing ? pathFor(notePaths.detail, { noteId: editing.id }) : '/notatki';
   return (
     <FormScreen title={editing ? 'Edytuj notatkę' : 'Nowa notatka'} cancelTo={back} doneTo={back} errors={errors} setErrors={setErrors}
       validate={() => ({ title: requiredText(values.title, 'tytuł notatki'), body: maxText(values.body, 50_000) })}
-      onSubmit={() => persist(services, 'note', mode, contractData('note', { title: values.title.trim(), body: values.body }), values.visibility)}>
+      onSubmit={() => {
+        const data = contractData('note', { title: values.title.trim(), body: values.body });
+        if (!base) return persist(services, 'note', mode, data, values.visibility);
+        return services.updateRecord({ entityType: 'note', id: base.id, baseVersion: base.version, patch: changedFields(base.data, data), expectedData: base.data });
+      }}>
+      {changedDuringEdit && <Notice tone="warning" title="Notatka zmieniła się podczas edycji">
+        <p>Twój tekst jest nadal w formularzu. Porównaj go z bieżącą wersją i połącz ręcznie.</p>
+        <p className="prewrap">{editing.data.title}</p><p className="prewrap">{editing.data.body}</p>
+        <Button variant="tinted" onClick={() => setBase(editing)}>Użyj bieżącej wersji jako podstawy</Button>
+      </Notice>}
       <div className="group">{editing ? <FixedPrivacy value={editing.visibility} /> : <PrivacyPicker subject="tę notatkę" value={values.visibility} onChange={set('visibility')} />}</div>
       <div className="group">
         <TextField label="Tytuł" value={values.title} onValue={set('title')} error={errors.title} placeholder="np. Pomysły na prezenty" autoComplete="off" maxLength={400} />
@@ -93,10 +105,16 @@ function NoteFormScreen({ mode }: { mode: FormMode<'note'> }) {
 export const NewNoteScreen = () => <NoteFormScreen mode={{ kind: 'create' }} />;
 export function EditNoteScreen() {
   const noteId = useParam('noteId');
+  const [state] = useRecord('note', noteId);
+  const [retained, setRetained] = useState<Typed<'note'> | null>(null);
+  useEffect(() => { if (state.status === 'ok') setRetained(state.value); }, [state]);
+  const record = state.status === 'ok' ? state.value : retained;
+  if (!record) return <MissingRecord state={state} title="Edytuj notatkę" back={{ to: pathFor(notePaths.detail, { noteId }), label: 'Notatka' }} />;
   return (
-    <RecordGate entityType="note" id={noteId} title="Edytuj notatkę" back={{ to: pathFor(notePaths.detail, { noteId }), label: 'Notatka' }}>
-      {(record) => <NoteFormScreen mode={{ kind: 'edit', record }} />}
-    </RecordGate>
+    <>
+      {state.status !== 'ok' && <Notice tone="warning">Notatka jest teraz niedostępna lub została usunięta. Tekst formularza został zachowany; możesz go skopiować. Sprawdź kosz i zmiany do sprawdzenia.</Notice>}
+      <NoteFormScreen mode={{ kind: 'edit', record }} />
+    </>
   );
 }
 
@@ -112,10 +130,40 @@ export function NoteDetailScreen() {
           <Section>
             <div className="group note-body">{note.data.body ? <p className="prewrap">{note.data.body}</p> : <p className="field__hint">Notatka nie ma treści.</p>}</div>
           </Section>
+          {note.visibility === 'private' && note.mine && <Section><ShareNote note={note} /></Section>}
           <Section><DeleteRecord entityType="note" record={note} what="notatkę" doneTo="/notatki" /></Section>
         </>
       )}
     </RecordGate>
+  );
+}
+
+function ShareNote({ note }: { note: Typed<'note'> }) {
+  const { shareNote } = useServices();
+  const [copy, setCopy] = useState<NoteCopy | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const confirm = async () => {
+    if (!copy || busy) return;
+    setBusy(true); setFailure(null);
+    try {
+      const result = shareNote ? await shareNote(copy) : { ok: false as const, reason: 'not_implemented' as const };
+      if (result.ok) navigate(pathFor(notePaths.detail, { noteId: copy.copyId }));
+      else setFailure(failureMessage(result));
+    } catch { setFailure('Nie utworzono kopii. Spróbuj ponownie.'); } finally { setBusy(false); }
+  };
+  return (
+    <div className="group">
+      {failure && <Notice tone="danger" role="alert">{failure}</Notice>}
+      {copy ? <div role="group" aria-label="Potwierdź wspólną kopię">
+        <p>Druga osoba w Waszym domu zobaczy tytuł i całą treść poniższej kopii po synchronizacji. Będzie mogła ją edytować i usuwać. Oryginał pozostanie „Tylko ja”. Obie notatki będą niezależne; widoczności kopii nie można cofnąć.</p>
+        <p className="prewrap">{copy.data.title}</p><p className="prewrap">{copy.data.body}</p>
+        <div className="actions">
+          <Button variant="filled" disabled={busy} onClick={() => void confirm()}>Utwórz wspólną kopię</Button>
+          <Button variant="plain" disabled={busy} onClick={() => { setCopy(null); setFailure(null); }}>Anuluj</Button>
+        </div>
+      </div> : <Button variant="tinted" onClick={() => setCopy({ sourceId: note.id, copyId: crypto.randomUUID(), data: { ...note.data } })}>Udostępnij wspólną kopię</Button>}
+    </div>
   );
 }
 

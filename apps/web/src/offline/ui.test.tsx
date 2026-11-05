@@ -302,3 +302,26 @@ it.each([
   expect(await tab.store!.db.records.count()).toBe(0);
   expect(server.count('notes', `owner_id = '${ACCOUNTS.b.id}'`)).toBe(0);
 });
+
+it('notatki: pull podczas otwartego edytora zachowuje szkic, blokuje stary zapis i umożliwia ręczne połączenie z aktualną podstawą', async () => {
+  const pa = new Phone(server), pb = new Phone(server);
+  const a = await signedIn(pa, 'a'), b = await signedIn(pb, 'b');
+  const created = await a.command((s) => s.create('note', { title: 'Wspólny plan', body: 'Początek' }, 'shared'));
+  const id = created.ok ? created.value : '';
+  await a.syncNow(); await b.syncNow();
+  render(<Root controller={b} />); go(`/notatki/${id}/edycja`);
+  fireEvent.change(await screen.findByLabelText('Treść'), { target: { value: 'Mój szkic ⛵' } });
+  await act(async () => { await a.command((s) => s.update('note', id, { body: 'Nowy tekst 🐢' })); await a.syncNow(); await b.syncNow(); });
+  expect(await screen.findByText('Notatka zmieniła się podczas edycji')).toBeTruthy();
+  expect(screen.getByText('Nowy tekst 🐢')).toBeTruthy();
+  expect((screen.getByLabelText('Treść') as HTMLTextAreaElement).value).toBe('Mój szkic ⛵');
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('Porównaj obie wersje');
+  expect((await b.store!.get(id))!.data.body).toBe('Nowy tekst 🐢');
+  fireEvent.change(screen.getByLabelText('Treść'), { target: { value: 'Nowy tekst 🐢\nMój szkic ⛵' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Użyj bieżącej wersji jako podstawy' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Zapisz' }));
+  await waitFor(() => expect(window.location.pathname).toBe(`/notatki/${id}`));
+  await act(async () => { await b.syncNow(); });
+  expect(server.database.sqlite.prepare('SELECT body FROM notes WHERE id = ?').get(id)).toEqual({ body: 'Nowy tekst 🐢\nMój szkic ⛵' });
+});

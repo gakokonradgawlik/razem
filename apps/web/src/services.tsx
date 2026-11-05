@@ -11,7 +11,7 @@ import type { z } from 'zod';
 export type LoginRequest = z.input<typeof loginRequestSchema>;
 export type PasswordChangeRequest = z.input<typeof passwordChangeRequestSchema>;
 export type AuthFailure = 'invalid_credentials' | 'rate_limited' | 'weak_password' | 'authentication_required' | 'unavailable' | 'not_implemented';
-export type StorageFailure = 'storage_unavailable' | 'storage_full' | 'not_found' | 'invalid' | 'conflict_open' | 'pending_changes' | 'account_changed';
+export type StorageFailure = 'storage_unavailable' | 'storage_full' | 'not_found' | 'invalid' | 'conflict_open' | 'record_changed' | 'pending_changes' | 'account_changed';
 export type ActionResult = { ok: true } | { ok: false; reason: AuthFailure | StorageFailure; retryAfterSeconds?: number };
 
 export type Session = { login: string; displayName: string; mustChangePassword: boolean };
@@ -27,8 +27,10 @@ export type StoredRecord = {
 /** not_found also covers "no access": the UI never reveals whether a private record exists. */
 export type LoadResult<T> = { status: 'ok'; value: T } | { status: 'not_found' } | { status: 'unavailable' };
 export type RecordQuery = { entityType: EntityType; parentId?: string };
-export type UpdateInput = { entityType: EntityType; id: string; baseVersion: number; patch: Record<string, unknown> };
+export type UpdateInput = { entityType: EntityType; id: string; baseVersion: number; patch: Record<string, unknown>; expectedData?: Record<string, unknown> };
 export type DeleteInput = { entityType: EntityType; id: string; baseVersion: number };
+/** Explicitly confirmed text; copyId stays the same when retrying a local save. */
+export type NoteCopy = { sourceId: string; copyId: string; data: { title: string; body: string } };
 
 /** A change that needs the user: a version conflict or a change the server rejected. */
 export type AttentionItem =
@@ -93,6 +95,7 @@ export interface AppServices {
   saveCalendar?(input: CalendarSave): Promise<ActionResult>;
   setTaskOccurrence?(taskId: string, occurrenceKey: string, completed: boolean): Promise<ActionResult>;
   restoreRecord?(entityType: EntityType, id: string): Promise<ActionResult>;
+  shareNote?(input: NoteCopy): Promise<ActionResult>;
 }
 
 const notImplemented = async (): Promise<ActionResult> => ({ ok: false, reason: 'not_implemented' });
@@ -125,6 +128,7 @@ export function failureMessage(result: Exclude<ActionResult, { ok: true }>): str
     case 'not_found': return 'Nie zapisano. Wpis mógł zostać usunięty albo nie jest dostępny.';
     case 'invalid': return 'Nie zapisano. Sprawdź wpisane dane.';
     case 'conflict_open': return 'Ten wpis zmieniono też na innym urządzeniu. Najpierw wybierz wersję w „Zmiany do sprawdzenia”.';
+    case 'record_changed': return 'Notatka zmieniła się podczas edycji. Porównaj obie wersje poniżej i połącz tekst przed ponownym zapisem.';
     case 'pending_changes': return 'Na tym urządzeniu są niewysłane zmiany.';
     case 'account_changed': return 'Nie zapisano: w tej aplikacji zalogowano inne konto.';
   }
