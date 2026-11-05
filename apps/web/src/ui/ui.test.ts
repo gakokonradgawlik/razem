@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { addMonths, formatMonth, monthGrid, todayIn } from '../dates.js';
+import { toSyncState } from '../offline/live.js';
 import { syncLabel } from '../services.js';
 
 // ---------- WCAG contrast of design tokens (light and dark) ----------
@@ -71,4 +72,22 @@ it('statusy synchronizacji mają brzmienie z design/interface.md', () => {
   expect(syncLabel({ kind: 'conflict', count: 1 }).text).toBe('1 zmiana wymaga sprawdzenia');
   expect(syncLabel({ kind: 'conflict', count: 3 }).text).toBe('3 zmiany wymagają sprawdzenia');
   expect(syncLabel({ kind: 'conflict', count: 5 }).text).toBe('5 zmian wymaga sprawdzenia');
+  expect(syncLabel({ kind: 'offline', pending: 2 }).text).toBe('Offline · zmiany czekają na wysłanie (2)');
+  expect(syncLabel({ kind: 'server_unavailable', pending: 1 }).text).toBe('Serwer niedostępny · zmiany czekają na wysłanie (1)');
+  expect(syncLabel({ kind: 'signed_out', pending: 4 }).text).toBe('Zaloguj się, aby wysłać zmiany (4)');
+  expect(syncLabel({ kind: 'storage_full' }).tone).toBe('danger');
+  expect(syncLabel({ kind: 'storage_unavailable' }).text).toContain('Pamięć urządzenia niedostępna');
+  expect(syncLabel({ kind: 'update_required' }).text).toContain('nowa wersja');
+});
+
+it('stan kontrolera → status: konflikt i brak miejsca mają pierwszeństwo, "Zsynchronizowano" tylko po udanym cyklu bez zaległości', () => {
+  const base = { phase: 'ready' as const, account: null, unsent: 0, attention: 0, revision: 1, storage: 'ok' as const, generation: 1,
+    status: { connection: 'ok' as const, lastSyncAt: '2026-11-04T13:05:00.000Z', lastAckAt: null, checkedAt: null } };
+  expect(toSyncState(base)).toEqual({ kind: 'synced', at: new Date('2026-11-04T13:05:00.000Z') });
+  expect(toSyncState({ ...base, unsent: 2 })).toEqual({ kind: 'pending', count: 2 });
+  expect(toSyncState({ ...base, unsent: 2, status: { ...base.status, connection: 'server_unavailable' } })).toEqual({ kind: 'server_unavailable', pending: 2 });
+  expect(toSyncState({ ...base, unsent: 1, status: { ...base.status, connection: 'auth_required' } })).toEqual({ kind: 'signed_out', pending: 1 });
+  expect(toSyncState({ ...base, attention: 1, status: { ...base.status, connection: 'offline' } })).toEqual({ kind: 'conflict', count: 1 });
+  expect(toSyncState({ ...base, storage: 'full', attention: 1 })).toEqual({ kind: 'storage_full' });
+  expect(toSyncState({ ...base, status: { ...base.status, lastSyncAt: null, connection: 'unknown' } })).toEqual({ kind: 'connecting' });
 });

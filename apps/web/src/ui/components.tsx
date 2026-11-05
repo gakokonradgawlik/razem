@@ -103,6 +103,9 @@ export function SyncBadge({ state: forced }: { state?: SyncState }) {
   return (
     <p className={`sync-badge sync-badge--${tone}`} role="status" aria-live="polite">
       <Icon name={icon} size={18} /><span>{text}</span>
+      {!forced && state.kind === 'conflict' && <Link to="/zmiany" className="sync-badge__action">Sprawdź</Link>}
+      {!forced && state.kind === 'signed_out' && <Link to="/logowanie" className="sync-badge__action">Zaloguj się</Link>}
+      {!forced && state.kind === 'storage_full' && <Link to="/ustawienia" className="sync-badge__action">Eksportuj</Link>}
     </p>
   );
 }

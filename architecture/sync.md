@@ -33,6 +33,8 @@ Nie używaj Background Sync API jako wymaganego mechanizmu; jego dostępność j
 Kod: `apps/server/src/sync/` (`service.ts`, `http.ts`), `packages/db/src/records.ts`
 (`RecordRepository` – jedyna ścieżka zapisu domeny), `packages/db/src/sync-store.ts`, migracja v3.
 - **Push** `POST /api/sync/push` (sesja, CSRF jak w RAZ-2; limit treści 1 MiB, partia 1–100).
+  Push i pull wymagają nagłówka `x-razem-account` równego kontu sesji tego żądania, inaczej
+  409 `account_mismatch` bez skutków (dodane w RAZ-5, opis w sekcji klienta).
   Koperta jest walidowana całościowo (400 `invalid_request`, inna `protocolVersion` → 400
   `upgrade_required`, za duża → 413 `payload_too_large`); każda mutacja osobno, więc jeden zły
   element dostaje własny `validation_error`, a reszta partii przechodzi. Mutacje wykonywane w
@@ -83,5 +85,93 @@ Kod: `apps/server/src/sync/` (`service.ts`, `http.ts`), `packages/db/src/records
   cudzy prywatny i nieistniejący dają identyczne `not_found` bez treści i wersji. Granica: create
   z UUID, który już istnieje jako cudzy prywatny rekord, też zwraca `not_found` (różne od `ack`
   dla nowego ID) – wymaga znajomości 122-bitowego losowego UUID, treść i wersja nie wyciekają.
-- Klient offline (kolejka, Dexie, reconciliation) to RAZ-5; serwer nie zakłada niczego o jego
-  zegarze.
+- Klient offline (kolejka, Dexie, reconciliation): sekcja RAZ-5 niżej; serwer nie zakłada
+  niczego o jego zegarze.
+
+## Implementacja klienta RAZ-5 (stan kodu)
+Kod: `apps/web/src/local-db.ts` (schemat Dexie), `apps/web/src/offline/` – `store.ts` (komendy,
+kolejka, ACK/rebase, pull, konflikty, eksport), `sync.ts` (silnik), `controller.ts` (konto/sesja),
+`live.tsx` (adapter `AppServices` dla ekranów), `api.ts` (HTTP z limitem 10 s).
+- **Baza per konto**: `razem:<householdId>:<userId>`; tabele `records` (widok lokalny), `queue`
+  (outbox, `++seq` = kolejność komend), `bases` (stan serwera, na którym oparto lokalne zmiany),
+  `conflicts`, `meta` (deviceId, cursor, status, rewizja), `seen` (ID z trwającego snapshotu).
+  W `localStorage` tylko tożsamość ostatniego konta (ID, login, nazwa) – bez tokenu i treści –
+  żeby aplikacja otwierała się offline na jego danych. Inne konto = inna baza.
+- **Migracja v1→v2** (szkielet RAZ-3): outbox przenoszony do `queue` z zachowaniem
+  `clientMutationId`, `attempts` i **deviceId** (część klucza idempotencji), cursor do `meta`.
+- **Komenda** (create/update/delete/restore): jedna transakcja Dexie rw na wszystkie tabele:
+  rekord + wpis kolejki (+ baza przy pierwszej zmianie czystego rekordu) + rewizja. Walidacja
+  kontraktem (także reguły domenowe) przed zapisem; dziecko dziedziczy widoczność/owner rodzica.
+  Wynik `ok` dopiero po commit; QuotaExceeded → `storage_full`, inne błędy → `storage_unavailable`,
+  nic nie zostaje zapisane połowicznie. Edycja rekordu z otwartym konfliktem jest blokowana.
+- **baseVersion**: wersja serwera, na której oparto zmianę; kolejna zmiana tego samego rekordu
+  w kolejce ma `null` („po mojej poprzedniej”) i po ACK poprzedniej dostaje wersję z ACK (rebase).
+  Wersji z pull nigdy nie podstawiamy pod czekającą zmianę – inaczej ukrylibyśmy konflikt.
+- **Push**: partie do 100 mutacji i ~1 MiB, w kolejności kolejki, **najwyżej jedna mutacja na
+  rekord w partii**; tworzenie dziecka może iść w tej samej partii co tworzenie rodzica. Pomijane
+  są zmiany za konfliktem/odrzuceniem tego rekordu lub rodzica. Wyniki w jednej transakcji:
+  `ack` → usunięcie wpisu, rebase następnego, a gdy nic nie czeka – stan serwera staje się widokiem;
+  `conflict` → cały łańcuch zmian rekordu przechodzi do `conflicts` (lokalny widok, baza, serwer);
+  nieaktualne usunięcie rekordu już usuniętego na serwerze rozstrzyga się samo;
+  `dependency_failed` → czeka; `already_exists` (wystąpienie zadania) → przyjęcie kopii serwera;
+  inne błędy → `needs_action` (widoczne, bez retry w kółko). 413/400 całej partii → mniejsze
+  partie, a pojedyncza mutacja → `needs_action`. Błąd sieci/5xx/timeout zostawia kolejkę;
+  zagubiona odpowiedź jest powtarzana tym samym ID (receipt serwera, jeden efekt).
+- **Pull**: strony do 200; każda strona i cursor w jednej transakcji. Rekord z lokalnymi zmianami
+  nie jest nadpisywany – aktualizuje się jego baza (i stan serwera w konflikcie). Brak cursora lub
+  `resync_required` → pełny snapshot: kolejka i konflikty zostają, a po końcu snapshotu (pierwsza
+  strona delty albo ostatnia strona snapshotu) usuwane są tylko czyste rekordy, których serwer
+  już nie zwrócił. Tombstone usuwa czysty rekord i jego czyste dzieci; brudnego nie wskrzesza.
+- **Silnik**: start, `focus`/`visibilitychange`, `online`, po komendzie i co 15 s, gdy karta jest
+  widoczna. Brak Background Sync i pracy zamkniętej PWA. Jeden cykl naraz na bazę konta między
+  kartami: Web Locks (`ifAvailable`), w razie braku – lease w `meta` (60 s, z losowym tokenem).
+  Lease jest odnawiany i weryfikowany **przed każdym żądaniem** (push, pull) i przed zapisem strony
+  pull; odnowienie udaje się tylko, gdy wiersz wciąż ma token tego cyklu. Utrata lease (np. karta
+  zamrożona w tle dłużej niż 60 s, a inna karta go przejęła – nawet jeśli już zwolniła) kończy
+  cykl bez dalszej wysyłki. Granica: żądanie już wysłane przed zamrożeniem może się zakończyć
+  równolegle z cyklem innej karty – skutki chroni idempotencja serwera (receipt).
+  Cykl: `GET /api/me` (sesja należy do konta tej bazy – inaczej kolejka nie jest wysyłana,
+  a aplikacja przełącza się na konto sesji) → push → pull → push nowych zmian.
+- **Powiązanie z kontem po stronie serwera**: każde `push`/`pull` ma nagłówek `x-razem-account`
+  (`SYNC_ACCOUNT_HEADER`, ID konta bazy). Serwer porównuje go z sesją **tego samego** żądania;
+  brak lub inna wartość → 409 `account_mismatch`, bez zapisu, receipt i danych. Dzięki temu
+  zmiana ciasteczka w innej karcie między `/api/me` a push, między partiami albo przed pull nie
+  przypisze treści A do B ani nie wpisze danych B do bazy A. Klient na 409 zatrzymuje cykl,
+  ustawia status, pyta `/api/me` i przełącza kartę na konto sesji; kolejka A zostaje w bazie A.
+  Nagłówek niczego nie autoryzuje – decyduje sesja. `stop()` silnika (wylogowanie, zmiana konta
+  w tej karcie) przerywa trwające żądanie (AbortController) i kończy cykl przed kolejnym.
+  Kontroler przed zamknięciem bazy czeka na koniec przerwanego cyklu (`stopAndSettle`), więc lease
+  zwalnia się w otwartej bazie i ponowne logowanie tego konta od razu wysyła jego kolejkę.
+  Backoff wykładniczy 2 s…5 min z jitterem dla ticków; zdarzenia użytkownika/sieci go pomijają;
+  `Retry-After` przy 429. `navigator.onLine` to tylko podpowiedź: próba zawsze idzie do serwera,
+  „Offline” = nieudana próba sieciowa przy `onLine=false`; odpowiedź HTTP 5xx/proxy = „Serwer
+  niedostępny”. 401 → „Zaloguj się, aby wysłać zmiany”, kolejka zostaje do zalogowania tego konta.
+- **Stan interfejsu związany z kontem**: każda aktywacja bazy konta (logowanie, przełączenie,
+  przejęcie sesji z innej karty, wylogowanie) dostaje nową **generację**. `AppServices` niesie
+  `accountKey` (konto + generacja), a wszystkie ich odczyty i komendy są związane z tą generacją:
+  wywołanie zachowane przez ekran poprzedniego konta (np. „Zapisz” formularza A) dostaje
+  `account_changed` i nic nie zapisuje, a odczyt – `unavailable`. `App` montuje ekrany z kluczem
+  `accountKey`, więc po zmianie konta wartości formularzy, wczytane rekordy i callbacki A znikają
+  z widoku; `useLoad` ma `accountKey` w zależnościach (rewizje różnych baz mogą być równe).
+  Użytkownik widzi komunikat „Otwarto konto: …”; niezapisany formularz A nie jest przenoszony
+  (szkic nie jest zachowywany), a niewysłane zmiany A czekają w bazie A.
+- **Status** (wspólny dla kart, w `meta`): „Zsynchronizowano HH:MM” tylko po udanym cyklu i bez
+  niewysłanych zmian; licznik = wpisy kolejki + zmiany w konfliktach. Pierwszeństwo: brak
+  miejsca/pamięci > zmiany do sprawdzenia > logowanie > nowa wersja > offline > serwer > liczba.
+- **Konflikty** (`/zmiany`, `/zmiany/:id`): moja wersja i wersja z serwera obok siebie; wybór
+  serwera, mojej albo scalanie pole po polu (tekst można połączyć ręcznie). Rozwiązanie to nowa
+  mutacja z nowym ID na bieżącej wersji serwera – zmiana w międzyczasie daje nowy konflikt.
+  Powiązania nadrzędne i klucze (`IMMUTABLE_PARENT_FIELDS` w `@razem/contracts`: `listId`, `taskId`,
+  `occurrenceKey`, `targetType`, `targetId`) nie są edytowalne przy scalaniu; `LocalStore.resolve`
+  zawsze bierze je z rekordu, niezależnie od danych z ekranu.
+  Kosz na serwerze + moja edycja → „Przywróć z moją wersją” (restore + update). Tombstone →
+  moja treść jako **nowy** wpis (nowe ID), stare ID nie wraca. Moje usunięcie + zdalna edycja →
+  „Usuń mimo to” albo wersja z serwera. Odrzucone zmiany można odrzucić lokalnie.
+- **Eksport** (Ustawienia, ostrzeżenie przy wylogowaniu, odznaka przy braku miejsca): plik JSON
+  z niewysłanymi zmianami i konfliktami tego konta. **Wylogowanie**: przy niewysłanych zmianach
+  wymaga decyzji (wyślij/eksportuj/usuń), potrzebuje serwera (`/api/auth/logout`), potem kasuje
+  bazę konta i wpis tożsamości. `navigator.storage.persist()` jest proszony bez obietnic.
+- **Granice**: bez Service Workera (RAZ-6) zimny start offline nie działa; otwarta karta działa.
+  Dane prywatne innego konta nigdy nie trafiają do lokalnej bazy (ACL serwera + sprawdzenie
+  `canReadRecord` przy zapisie lokalnym). Przełączenie konta nie usuwa bazy poprzedniego konta
+  (jego kolejka czeka na jego logowanie), ale nie jest dla nikogo innego otwierana.

@@ -5,6 +5,13 @@ import type { EntityType } from './model.js';
 
 export const PROTOCOL_VERSION = 1;
 export const MAX_PUSH_BATCH = 100;
+/**
+ * Required on /api/sync/push and /api/sync/pull: the account (user ID) whose local queue and
+ * database the request belongs to. The server compares it with the session of the same
+ * request and answers 409 `account_mismatch` otherwise, so a cookie switched to another
+ * account mid-cycle (sign-in in another tab) can never carry or receive the first account's data.
+ */
+export const SYNC_ACCOUNT_HEADER = 'x-razem-account';
 export const MAX_PULL_PAGE = 200;
 export const RETENTION_DAYS = 90;
 export const TRASH_DAYS = 30;
@@ -15,17 +22,19 @@ export const MAX_PULL_PAGE_BYTES = 1024 * 1024;
 const baseVersion = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 const identity = { clientMutationId: idSchema, entityId: idSchema };
 
+/** Parent references and keys fixed at creation; an update can never change them. */
+export const IMMUTABLE_PARENT_FIELDS: readonly string[] = ['listId', 'taskId', 'occurrenceKey', 'targetType', 'targetId'];
+
 function entityMutations<T extends EntityType, S extends z.ZodObject, V extends z.ZodRawShape>(type: T, data: S, visibility: V) {
   // Children inherit ACL from their immutable parent reference. They cannot choose visibility.
   const patch = data.partial();
-  const immutableParentFields = ['listId', 'taskId', 'occurrenceKey', 'targetType', 'targetId'];
   return [
     z.strictObject({ ...identity, entityType: z.literal(type), command: z.literal('create'),
       baseVersion: z.literal(0), ...visibility, data }),
     z.strictObject({ ...identity, entityType: z.literal(type), command: z.literal('update'), baseVersion, patch })
       .superRefine((value, ctx) => {
         if (Object.keys(value.patch).length === 0) ctx.addIssue({ code: 'custom', message: 'Pusta zmiana' });
-        if (Object.keys(value.patch).some((key) => immutableParentFields.includes(key)))
+        if (Object.keys(value.patch).some((key) => IMMUTABLE_PARENT_FIELDS.includes(key)))
           ctx.addIssue({ code: 'custom', message: 'Powiązanie nadrzędne jest niezmienne' });
       }),
   ] as const;

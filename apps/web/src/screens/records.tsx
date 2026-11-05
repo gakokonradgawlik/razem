@@ -22,15 +22,18 @@ function typed<T extends EntityType>(type: T, record: StoredRecord): Typed<T> | 
   return parsed.success ? { ...record, entityType: type, data: parsed.data as DataOf<T> } : null;
 }
 
-function useLoad<T>(load: () => Promise<LoadResult<T>>, key: string): [LoadState<T>, () => void] {
+export function useLoad<T>(load: () => Promise<LoadResult<T>>, key: string): [LoadState<T>, () => void] {
   const [state, setState] = useState<LoadState<T>>({ status: 'loading' });
   const [generation, setGeneration] = useState(0);
+  // Local writes, pulled changes and other tabs bump the revision: the view re-reads the local store.
+  // The account database is part of the query (App also remounts screens on an account switch).
+  const { revision, accountKey } = useServices();
   useEffect(() => {
     let active = true;
     load().then((result) => { if (active) setState(result); }, () => { if (active) setState({ status: 'unavailable' }); });
     return () => { active = false; };
     // `key` identifies the query; `load` is recreated on every render.
-  }, [key, generation]);
+  }, [key, generation, revision, accountKey]);
   return [state, useCallback(() => setGeneration((value) => value + 1), [])];
 }
 
@@ -72,7 +75,7 @@ export function MissingRecord({ state, title, back }: { state: LoadState<unknown
         {state.status === 'loading' ? <LoadingNotice />
           : state.status === 'not_found'
             ? <EmptyState icon="alert" title="Nie znaleziono wpisu" text="Wpis mógł zostać usunięty albo nie jest dostępny dla Twojego konta." action={{ label: `Wróć: ${back.label}`, to: back.to }} />
-            : <EmptyState icon="alert" title="Nie można wyświetlić wpisu" text="Wpisy zapisane na tym urządzeniu nie są jeszcze dostępne w tej wersji aplikacji." action={{ label: `Wróć: ${back.label}`, to: back.to }} />}
+            : <EmptyState icon="alert" title="Nie można wyświetlić wpisu" text="Zaloguj się, aby wpisy zapisane na tym urządzeniu były dostępne." action={{ label: `Wróć: ${back.label}`, to: back.to }} />}
       </Section>
     </>
   );

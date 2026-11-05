@@ -8,4 +8,5 @@ export const healthSchema = z.strictObject({ status: z.literal('ok'), service: z
 export const apiErrorSchema = z.strictObject({ error: z.enum([
   'authentication_required', 'invalid_credentials', 'password_change_required', 'weak_password',
   'forbidden', 'rate_limited', 'not_found', 'invalid_request', 'unavailable', 'upgrade_required', 'payload_too_large',
+  'account_mismatch',
 ]), message: z.string().max(200).optional() });

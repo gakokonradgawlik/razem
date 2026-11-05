@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { defaultVisibility } from '@razem/contracts';
-import { AddButton, EmptyState, List, ListRow, PrivacyPicker, PrivacyTag, ScreenHeader, Section, SelectField, TextArea, TextField } from '../ui/components.js';
+import type { EntityType } from '@razem/contracts';
+import { AddButton, Button, EmptyState, Notice, List, ListRow, PrivacyPicker, PrivacyTag, ScreenHeader, Section, SelectField, TextArea, TextField } from '../ui/components.js';
 import { FormScreen, useFormValues } from '../ui/form.js';
 import type { Errors } from '../ui/form.js';
 import { pathFor, useParam } from '../router.js';
-import { useServices } from '../services.js';
-import type { Visibility } from '../services.js';
+import { failureMessage, useServices } from '../services.js';
+import type { TrashItem, Visibility } from '../services.js';
 import { contractData, maxText, requiredText } from './validation.js';
 import { formatDayMonth } from '../dates.js';
-import { DeleteRecord, DetailFields, EditLink, FixedPrivacy, LoadingNotice, RecordGate, loaded, persist, useRecords } from './records.js';
+import { DeleteRecord, DetailFields, EditLink, FixedPrivacy, LoadingNotice, RecordGate, loaded, persist, useLoad, useRecords } from './records.js';
 import type { FormMode, Typed } from './records.js';
 
 export const notePaths = { detail: '/notatki/:noteId', edit: '/notatki/:noteId/edycja' } as const;
@@ -220,12 +221,36 @@ export function ImportantDateDetailScreen() {
 // ---------- Trash ----------
 
 export function TrashScreen() {
+  const services = useServices();
+  const [state, reload] = useLoad(() => services.listTrash ? services.listTrash() : Promise.resolve({ status: 'unavailable' as const }), 'trash');
+  const [failure, setFailure] = useState<string | null>(null);
+  const items = state.status === 'ok' ? state.value : state.status === 'loading' ? null : [];
+  const restore = async (item: TrashItem) => {
+    const result = await services.restoreRecord?.(item.entityType, item.id);
+    setFailure(result && !result.ok ? failureMessage(result) : null);
+    reload();
+  };
   return (
     <>
       <ScreenHeader title="Kosz" back={{ to: '/wiecej', label: 'Więcej' }} />
+      {failure && <Notice tone="danger" role="alert">{failure}</Notice>}
       <Section footer="Usunięte wpisy są przechowywane przez 30 dni, potem znikają na stałe.">
-        <EmptyState icon="trash" title="Kosz jest pusty" text="Usunięte zakupy, zadania, wydarzenia i notatki można stąd przywrócić." />
+        {items === null ? <LoadingNotice />
+          : items.length === 0 ? <EmptyState icon="trash" title="Kosz jest pusty" text="Usunięte zakupy, zadania, wydarzenia i notatki można stąd przywrócić." />
+            : (
+              <List label="Usunięte wpisy">
+                {items.map((item) => (
+                  <li key={item.id} className="row row--stack">
+                    <span className="row__text"><span className="row__title">{item.title}</span>
+                      <span className="row__detail">{trashLabel[item.entityType] ?? 'Wpis'} · <PrivacyTag value={item.visibility} /></span></span>
+                    <Button variant="tinted" onClick={() => void restore(item)}>Przywróć</Button>
+                  </li>
+                ))}
+              </List>
+            )}
       </Section>
     </>
   );
 }
+
+const trashLabel: Partial<Record<EntityType, string>> = { shopping_list: 'Lista zakupów', task: 'Zadanie', calendar_event: 'Wydarzenie', important_date: 'Ważna data', note: 'Notatka' };
