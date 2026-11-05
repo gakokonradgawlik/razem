@@ -72,9 +72,7 @@ export class LocalDatabase extends Dexie {
   seen!: Table<{ id: string }, string>;
 
   constructor(scope: AccountScope, options?: DexieOptions) {
-    // Offline writes must survive closing the whole browser, including immediately
-    // after an edit. Ask IndexedDB to flush writes before reporting transaction completion.
-    super(localDatabaseName(scope), { ...options, chromeTransactionDurability: 'strict' });
+    super(localDatabaseName(scope), options);
     // v1: RAZ-3 scaffold. Never delete its outbox without moving it (upgrade test).
     this.version(1).stores({
       records: 'id, entityType, visibility',

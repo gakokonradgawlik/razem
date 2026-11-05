@@ -56,6 +56,21 @@ async function month(p: Page, title: string) {
   expect(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
 
+async function storedCalendar(p: Page) {
+  return p.evaluate(async () => {
+    const account = JSON.parse(localStorage.getItem('razem:account')!);
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(`razem:${account.householdId}:${account.userId}`);
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const records = await new Promise<{ id: string; data: Record<string, unknown> }[]>((resolve, reject) => {
+      const request = db.transaction('records').objectStore('records').getAll();
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    db.close(); return records;
+  });
+}
+
 test('kalendarz offline → restart procesu → sync partnera: rodzaje, rok, strefy, oba widoki, prywatność i usuwanie', async ({ playwright, browserName, browser }, info) => {
   const tag = `${info.project.name}-${Date.now()}`, profile = await mkdtemp(join(tmpdir(), 'razem-calendar-profile-'));
   const options = { headless: true, baseURL: ORIGIN, viewport: { width: 390, height: 844 }, locale: 'pl-PL', timezoneId: 'America/Los_Angeles', ...(browserName === 'webkit' ? { isMobile: true, hasTouch: true } : {}) };
@@ -69,13 +84,18 @@ test('kalendarz offline → restart procesu → sync partnera: rodzaje, rok, str
     await a.goto(path); await a.getByRole('link', { name: 'Edytuj', exact: true }).click();
     await expect(a.getByLabel('Koniec – dzień')).toHaveValue('2027-01-02'); await a.getByLabel('Opis (opcjonalnie)').fill('Zmienione offline');
     await a.getByRole('button', { name: 'Zapisz', exact: true }).click();
+    await expect(a).toHaveURL(ORIGIN + path);
     await expect(a.getByText('Zmienione offline', { exact: true })).toBeVisible();
+    expect((await storedCalendar(a)).find((r) => r.id === path.split('/').at(-1))?.data.description).toBe('Zmienione offline');
     await a.goto(datePath); await a.getByRole('link', { name: 'Edytuj', exact: true }).click();
     await a.getByLabel('Rok początkowy (opcjonalnie)').fill('2016'); await a.getByRole('button', { name: 'Zapisz', exact: true }).click();
+    await expect(a).toHaveURL(ORIGIN + datePath);
     await expect(a.getByText(/2026-12-31 · 10 lat/)).toBeVisible();
     await calendar(a); await month(a, name);
     const day = a.getByRole('button', { name: /, 31 grudnia 2026, wpisy:/ }); await day.click();
     await expect(a.getByRole('list', { name: 'Wpisy wybranego dnia' }).getByRole('link', { name: new RegExp(date) })).toBeVisible();
+    const beforeRestart = await storedCalendar(a);
+    expect(beforeRestart.find((r) => r.id === path.split('/').at(-1))?.data.description).toBe('Zmienione offline');
     await context.close(); context = await playwright[browserName].launchPersistentContext(profile, { ...options, offline: true }); a = await context.newPage();
     await a.goto(path); await expect(a.getByRole('heading', { level: 1, name })).toBeVisible(); await expect(a.getByText('Zmienione offline', { exact: true })).toBeVisible();
     await expect(a.getByText(/Przypomnienie zapisane/)).toBeVisible();
