@@ -86,6 +86,8 @@ buduje lokalny obraz `razem-<projekt>:<APP_VERSION>`, zatrzymuje wyłącznie wł
 app/worker i przed każdą aktualizacją tworzy sprawdzony backup **starym obrazem**.
 Kopia zawiera `/data/installation.env` (zapisany przez instalator, UID 1000, 0600).
 Poprzednia konfiguracja i niezmienny ID obrazu są w `.razem/previous.json`.
+Backup używa lokalnego tagu `retained-<ID>` oraz osobnego `docker run --pull never`
+z wyłączoną siecią, także na Compose v5. Nie ma definicji build ani opublikowanych portów.
 Nie usuwaj obrazu ani konfiguracji poprzedniej wersji przed odbiorem aktualizacji.
 
 Migracje wykonuje kontrolowane CLI app z checksumami i snapshotem przed zmianą

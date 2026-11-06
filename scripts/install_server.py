@@ -220,8 +220,15 @@ def install():
                 retained = f"razem-{config['project']}:retained-{old_image.removeprefix('sha256:')[:24]}"
                 run(['docker', 'image', 'tag', old_image, retained])
                 backup_config['env']['RAZEM_IMAGE'] = retained
-            compose(backup_config, 'run', '--rm', '--no-deps', '--no-build', '--pull', 'never', '-T', 'app', 'node',
-                    'apps/server/dist/admin.js', 'backup', '--config-file', '/data/installation.env')
+            volume = json.loads(compose(backup_config, 'config', '--format', 'json'))['volumes']['data']['name']
+            # A dedicated Docker run has no build definition and no network access.
+            run(['docker', 'run', '--rm', '--pull', 'never', '--network', 'none', '--read-only',
+                 '--tmpfs', '/tmp', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
+                 '--label', f"com.docker.compose.project={config['project']}",
+                 '--label', f"com.docker.compose.project.working_dir={ROOT / 'deploy'}",
+                 '--mount', f'type=volume,source={volume},target=/data,volume-nocopy',
+                 backup_config['env']['RAZEM_IMAGE'], 'node', 'apps/server/dist/admin.js',
+                 'backup', '--config-file', '/data/installation.env'])
             atomic(STATE / 'previous.json', json.dumps(old))
         STEP = 'kontrolowane migracje'
         compose(config, 'run', '--rm', '--no-deps', '-T', 'app', 'node', 'apps/server/dist/admin.js', 'migrate')

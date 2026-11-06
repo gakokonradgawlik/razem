@@ -204,12 +204,12 @@ def inside(project, commit):
                  '-fsS', f'http://{gateway}:{port}/readyz'])
         passed('HTTP upstream reachable from isolated container proxy network on selected port')
         # Force startup failure after backup/migration. No false version, then repair using same sources.
-        env['RAZEM_PUBLIC_ORIGIN'] = 'http://invalid-production-origin.test'
+        env['RAZEM_TRUST_PROXY'] = 'invalid-proxy-address'
         result = install({'APP_VERSION': version + '-bad-start'}, success=False)
         images.add(f'razem-{project}:{version}-bad-start')
         assert 'start i gotowość' in result.stderr
         assert f'APP_VERSION={updated}\n' in (root / '.env').read_text()
-        env.pop('RAZEM_PUBLIC_ORIGIN')
+        env.pop('RAZEM_TRUST_PROXY')
         install({'APP_VERSION': updated, 'RAZEM_BIND_ADDRESS': gateway})
         assert snapshot() == baseline
         passed('controlled startup failure and repair: nonzero exit, successful version+data preserved')
