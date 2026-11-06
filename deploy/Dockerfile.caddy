@@ -1,0 +1,6 @@
+FROM caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+# Image-owned directories initialize only NEW named volumes, never a shared host path.
+# The base binary has cap_net_bind_service; executing it with cap_drop ALL fails EPERM.
+# Port 8443 needs no capability. Remove the file capability in our own image.
+RUN setcap -r /usr/bin/caddy && chown -R 1000:1000 /data /config
+USER 1000:1000

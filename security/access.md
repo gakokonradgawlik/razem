@@ -1,5 +1,15 @@
 <!-- razem/security/access.md · updated 2026-10-28 by Codex -->
 # Razem — konta, prywatność i bezpieczeństwo
+## Bootstrap instalatora (RAZ-15)
+ToDo uruchamia skrypt bez stdin/TTY. Właściciel przekazuje JSON dwóch kont przez
+prywatne ustawienie RAZEM_BOOTSTRAP_JSON lub plik RAZEM_BOOTSTRAP_FILE (0600,
+root/właściciel instalacji, poza kontekstem build lub w wykluczonym `.razem/`).
+Instalator przesyła go do stdin kontenera, bez logowania i haseł w argv. Bootstrap
+pozostaje transakcyjny, bez rejestracji, kont demo i resetowania istniejących kont.
+Po sukcesie usuń wejściowy plik/prywatne ustawienie, zachowaj prywatne prawa kluczy
+VAPID oraz wymaganie zmiany haseł przy pierwszym logowaniu. Szczegóły:
+[operations/ubuntu.md](../operations/ubuntu.md).
+
 ## Dostęp
 Jedno gospodarstwo, dokładnie dwa konta członków. Brak otwartej rejestracji. Interaktywny bootstrap CLI tworzy gospodarstwo i dwa konta z tymczasowymi hasłami przekazanymi stdin, wymuszając własne hasło przy pierwszym logowaniu online. Nie ma hasła domyślnego ani konta demo w produkcji. E-mail/login jest identyfikatorem, bez konieczności wysyłania poczty.
 Hasła Argon2id ze współczesnymi zalecanymi parametrami dobranymi i zmierzonymi na serwerze; ratelimit logowania, ogólne komunikaty błędów. Reset i odzyskiwanie przez administratora lokalnym CLI, z unieważnieniem sesji. Zapisuj zdarzenie resetu, nigdy sekret.

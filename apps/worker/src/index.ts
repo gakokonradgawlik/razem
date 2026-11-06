@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { PROTOCOL_VERSION } from '@razem/contracts';
@@ -27,9 +28,10 @@ let stopping = false;
 let running: Promise<void> = Promise.resolve();
 let busy = false;
 const run = () => {
-  if (stopping || busy || !worker) return;
+  if (stopping || busy) return;
+  if (!worker) { writeFileSync('/tmp/worker-ready', '', { mode: 0o600 }); return; }
   busy = true;
-  running = worker.tick().catch(() => { console.error('Razem: cykl przypomnień nie powiódł się'); }).finally(() => { busy = false; });
+  running = worker.tick().then(() => { writeFileSync('/tmp/worker-ready', '', { mode: 0o600 }); }).catch(() => { console.error('Razem: cykl przypomnień nie powiódł się'); }).finally(() => { busy = false; });
 };
 const timer = setInterval(run, 15_000);
 run();

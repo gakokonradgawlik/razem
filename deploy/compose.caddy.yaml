@@ -1,0 +1,41 @@
+# Opt-in only: use alongside compose.yaml and --profile caddy. No global proxy changes.
+services:
+  caddy:
+    profiles: [caddy]
+    image: ${RAZEM_CADDY_IMAGE:-razem-caddy:2.11.4}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.caddy
+    user: '1000:1000'
+    init: true
+    restart: unless-stopped
+    entrypoint: [/bin/sh, -ec]
+    command: ['test -n "$${RAZEM_SITE_ADDRESS}" || { echo "Ustaw rzeczywisty RAZEM_SITE_ADDRESS" >&2; exit 1; }; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile']
+    environment:
+      RAZEM_SITE_ADDRESS: ${RAZEM_SITE_ADDRESS:-}
+    ports:
+      - '${RAZEM_HTTPS_BIND:-127.0.0.1}:${RAZEM_HTTPS_PORT:-8443}:8443'
+    volumes:
+      - ${RAZEM_CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.5
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:2019/config/']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: '3' }
+volumes:
+  caddy_data:
+  caddy_config:
