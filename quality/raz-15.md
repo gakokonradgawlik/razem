@@ -1,8 +1,10 @@
 # RAZ-15 — pakiet Ubuntu, kontrakt ToDo i dowody
 
-Zweryfikowany kod: **a2d0c7f835cb6c447ca3024a64900e335ef32315**.
+Zweryfikowany kod instalatora po review: **c2228dd24b8dfe17f0a99f512c327eb3526fce04**;
+harness izolowanego daemona: **3baa8e7**. Pierwsza pełna próba przed review:
+**a2d0c7f835cb6c447ca3024a64900e335ef32315**.
 Gałąź `agent/raz-15`, wyjściowy main `7fadd6ee1d81c0bac499f7f39238ffc76e1b33ad`.
-Raport i późniejsze zmiany dokumentacyjne nie zmieniają kodu instalatora/obrazów.
+Późniejsza aktualizacja tego raportu nie zmienia kodu instalatora/obrazów.
 Nie wykonano wdrożenia na domowym serwerze ani scalenia do main.
 
 ## Dostarczone pliki i zachowanie
@@ -13,7 +15,7 @@ Nie wykonano wdrożenia na domowym serwerze ani scalenia do main.
 - Preflight tylko do odczytu, prywatna konfiguracja, lock, kontrolowany build,
   zachowanie starego obrazu **przed** rebuildem, offline backup tym obrazem przed
   migracją, idempotentny bootstrap, readiness obu usług i HTTP, wersja po sukcesie.
-- `deploy/Dockerfile`, `compose.yaml`: Fastify + zbudowana PWA, worker z heartbeat,
+- `deploy/Dockerfile`, `compose.yaml`, `compose.subnet.yaml`: Fastify + zbudowana PWA, worker z heartbeat,
   trwała lokalna SQLite WAL, non-root, read-only, restart, limity i rotacja logów.
 - `deploy/compose.caddy.yaml`, `Dockerfile.caddy`, `Caddyfile[.public]`: opcjonalny
   non-root Caddy bez capabilities, z trwałą CA i bez fikcyjnego adresu wdrożenia.
@@ -37,18 +39,21 @@ DNS, VPN, firewall ani router nie są zmieniane. Baza nie ma portu sieciowego.
 | `npm run typecheck` | PASS |
 | `npm test` | **305/305, 33 pliki PASS**, sync/offline/ACL/migracje/backup/worker |
 | `npm run build` | PASS wszystkich 5 workspace, produkcyjny frontend Fastify |
-| `python3 scripts/test-install-config.py` | **7/7 PASS**: porty, legacy env jako dane, symlinki/uprawnienia, stabilność VAPID/projektu, walidacja, prywatny bootstrap i ochrona kontekstu build |
+| `python3 scripts/test-install-config.py` | **9/9 PASS**: porty, legacy env jako dane, symlinki/uprawnienia, stabilność VAPID/projektu, walidacja, prywatny bootstrap, ochrona kontekstu build oraz wybór override podsieci i zachowanie istniejącej podsieci |
 | `sh -n` trzech wejść shell | PASS |
 | `python3 -m py_compile` | PASS skryptów instalacji/testu |
-| Compose v2.40.3 `config --quiet` | PASS głównego pliku oraz opcjonalnego profilu Caddy |
+| Compose v2.40.3 `config` | PASS czterech kombinacji: automatic/explicit × app+worker/Caddy; asercje rzeczywistego JSON: brak IPAM dla automatic, dokładna podsieć dla explicit |
 | Docker build app/worker | PASS, przypięta baza Node po digest, runtime non-root |
 | `python3 scripts/test-installation.py a2d0c7f` | **12 scenariuszy + cleanup PASS**, kod 0; rzeczywiste buildy/HTTP/SQLite/Compose v5 |
+| `python3 scripts/test-installation.py c2228dd` po review | **12 scenariuszy + cleanup PASS**, kod 0; jawna podsieć 10.249.0.0/28, faktyczny wrapper `compose.sh`, stabilne ID sieci po fresh/repeat/restart |
+| `python3 scripts/test-installation.py --isolated-daemon 3baa8e7` po review | **12 scenariuszy + cleanup PASS**, kod 0; brak RAZEM_NETWORK_SUBNET, brak IPAM w Compose, automatycznie przydzielone 10.254.0.0/24; Docker 29.1.3/Compose 5.0.0, fresh/repeat/restart z tą samą siecią i danymi |
 | Caddy non-root z `cap_drop ALL`, read-only, 128 MB | PASS; certyfikat lokalnej CA i TLS zweryfikowane przez curl `--cacert`, bez pomijania weryfikacji |
 | `git diff --check` | PASS |
 
 Kontrole Node wykonano w usuwanym kontenerze z wymaganym toolchainem, na
 archiwum 1fc4758; dotknięty kod TypeScript nie zmienił się później. Testy instalacji
-powtórzono na finalnym kodzie a2d0c7f. Host/daemon: Ubuntu 26.04.1, Docker 29.1.3.
+przed review powtórzono na a2d0c7f, a po review na c2228dd (explicit) i 3baa8e7
+(automatic, osobny daemon). Host/daemon: Ubuntu 26.04.1, Docker 29.1.3.
 Izolowany wykonawca root: Alpine 3.23/Python 3, Docker CLI 29.1.3 i Compose v5.
 Nie wymagał hostowego Node, repo checkoutu ani lokalnych artefaktów deweloperskich.
 Nie ponawiano e2e przeglądarek: UI/sync nie zmieniono, sprawdzono istniejące 305
@@ -95,11 +100,27 @@ nie wysyłano realnego push. Podczas restore odwołanie subskrypcji usuwa powią
 kolejkę przez FK — porównanie bezstratnego restartu dotyczy aktywnej instalacji,
 a restore ma świadomą politykę ponownego opt-in.
 
+Po review cały powyższy zestaw wykonano ponownie **w obu wariantach sieci**.
+Automatic: zmienna RAZEM_NETWORK_SUBNET nie jest przekazywana; test sprawdza
+rzeczywisty JSON Compose bez `ipam.config`, podsieć przydzieloną przez Docker
+i niezmienność ID sieci po fresh/repeat/restart. Osobny daemon ma własny magazyn
+i wolne pule, słucha wyłącznie na Unix sockecie, nie montuje hostowego Docker socketa
+ani nie publikuje portów na hoście. Explicit: test sprawdza dokładną podsieć z
+override i te same warunki trwałości. Oba testy używają operatorowego `compose.sh`.
+Pierwsza próba DinD c2228dd zakończyła się przed instalacją przez montowanie /tmp;
+poprawka 3baa8e7 dotyczy wyłącznie harnessu, ponowiona pełna próba ma kod 0.
+
 ## Wykryte problemy i poprawki
 
 - Domyślne pule sieci Docker były wyczerpane przez istniejące 34 sieci. Nie usuwano
-  ich. Test wybiera wolną /28 po odczycie adresacji; pakiet udostępnia opcjonalny
-  RAZEM_NETWORK_SUBNET i konkretną diagnozę.
+  ich. Test na współdzielonym daemonie wybiera wolną /28 po odczycie adresacji;
+  pakiet udostępnia opcjonalny RAZEM_NETWORK_SUBNET i konkretną diagnozę.
+- Review wykazało brak testu domyślnego IPAM i ryzyko pustego `ipam.config: [{}]`.
+  Główny plik Compose pomija teraz IPAM, a osobny `compose.subnet.yaml` jest
+  dołączany przez wspólne argumenty instalatora i `compose.sh` wyłącznie dla
+  niepustego RAZEM_NETWORK_SUBNET. Testy sprawdzają konfigurację i faktyczną sieć
+  po fresh/repeat/restart. `--isolated-daemon` zapewnia osobne wolne pule;
+  entrypoint DinD montuje własne /tmp, więc źródła testu są montowane w /work.
 - Compose v5 interpretował surowe image ID jako repository:tag, a rebuild tej samej
   wersji mógł usunąć referencję starego manifestu. Instalator zachowuje lokalny tag
   przed buildem, a backup uruchamia przez `docker run --pull never --network none`.
@@ -110,7 +131,7 @@ a restore ma świadomą politykę ponownego opt-in.
 
 ## Artefakty i sprzątanie
 
-Trwały log końcowej próby:
+Trwały log próby przed review:
 `/home/konrad-gawlik/work/razem/artifacts/raz15-installation-a2d0c7f.log`.
 Próba: `raz15-27138440a9`, użyte porty **33377, 47751, 54089, 55725**.
 Wszystkie usunięto/zwolniono; test zakończył się `PASS cleanup` i kodem 0.
@@ -118,6 +139,18 @@ Kontenery, sieci, wolumeny i obrazy prób mają unikalne nazwy i są usuwane w f
 root backstop usuwa także prywatny tymczasowy stan. Poprzednie nieudane próby
 również posprzątano. Współdzielone bazy/obrazy i cudze zasoby pozostawiono.
 Nie używano globalnego prune. Cache buildów Dockera pozostaje współdzielony.
+
+Końcowe logi po review:
+
+- `artifacts/raz15-explicit-c2228dd.log`, projekt `raz15-92fc0f7a63`,
+  porty **47773, 39277, 56173, 56351**; 12 scenariuszy i cleanup PASS, kod 0.
+- `artifacts/raz15-automatic-3baa8e7.log`, projekt `raz15-390657c6e3`,
+  porty **45037, 51083, 53127, 54719** wewnątrz izolowanego daemona;
+  12 scenariuszy, cleanup i usunięcie daemona/magazynu PASS, kod 0.
+
+Zewnętrzny kontener daemona `raz15-390657c6e3-daemon` i jego własny wolumen
+`raz15-390657c6e3-daemon-data` usunięto. Pierwszą nieudaną próbę
+`raz15-fa809867f0` także usunięto. Nie pozostawiono podglądu ani testowego portu.
 
 Przenośne wydanie: `sh scripts/package-release.sh` zapisuje
 `/home/konrad-gawlik/work/razem/artifacts/razem-<pełny-SHA>.tar.gz` i `.sha256`.
