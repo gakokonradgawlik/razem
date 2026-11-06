@@ -43,6 +43,26 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(installer.configuration(None)['env']['HTTP_PORT'], '18097')
         self.assertFalse((self.root / 'SHOULD_NOT_EXIST').exists())
 
+    def test_subnet_override_only_for_explicit_subnet(self):
+        config = installer.configuration(None)
+        override = str(self.root / 'deploy/compose.subnet.yaml')
+        self.assertNotIn(override, installer.compose_args(config))
+        os.environ['RAZEM_NETWORK_SUBNET'] = ''
+        self.assertNotIn(override, installer.compose_args(installer.configuration(None)))
+        os.environ['RAZEM_NETWORK_SUBNET'] = '10.249.0.0/28'
+        config = installer.configuration(None)
+        self.assertEqual(installer.compose_args(config)[-2:], ['-f', override])
+        os.environ.pop('RAZEM_NETWORK_SUBNET')
+        self.assertIn(override, installer.compose_args(installer.configuration(config)))
+
+    def test_existing_subnet_cannot_be_changed_or_cleared(self):
+        os.environ['RAZEM_NETWORK_SUBNET'] = '10.249.0.0/28'
+        config = installer.configuration(None)
+        for subnet in ['', '10.249.0.16/28', 'invalid']:
+            with self.subTest(subnet=subnet), patch.dict(os.environ, {'RAZEM_NETWORK_SUBNET': subnet}):
+                with self.assertRaises((RuntimeError, ValueError)):
+                    installer.configuration(config)
+
     def test_private_config_refuses_symlink_and_world_readable(self):
         path = self.root / '.env'
         path.write_text('RAZEM_PORT=18098\n')

@@ -40,6 +40,13 @@ instalator odmawia symlinków i nie wykonuje jego zawartości jako kodu.
 | VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY | Opcjonalna istniejąca para; nie jest rotowana przez ponowienie/aktualizację |
 | RAZEM_BOOTSTRAP_JSON / RAZEM_BOOTSTRAP_FILE | Jeden sposób podania prywatnego JSON dwóch kont; plik 0600, root/właściciel instalacji |
 
+Bez RAZEM_NETWORK_SUBNET główny `deploy/compose.yaml` pomija konfigurację IPAM:
+Docker sam przydziela podsieć. Dla niepustej wartości instalator i `scripts/compose.sh`
+dołączają `deploy/compose.subnet.yaml`. Przy ręcznym wywołaniu Docker Compose
+z jawną podsiecią trzeba dodać `-f deploy/compose.subnet.yaml` po głównym pliku;
+sam główny plik zawsze korzysta z automatycznego przydziału. Nie dołączaj rozszerzenia
+przy pustej wartości. Nie zmieniaj podsieci istniejącej instalacji.
+
 Puste VAPID wyłącza push, bez blokowania organizera. Klucze i cursor key SQLite
 powstają raz; nie ma losowania sekretów przy restarcie. Zmiana niepustej istniejącej
 konfiguracji VAPID przez instalator jest odrzucana. Rotacja wymaga oddzielnego,
@@ -190,6 +197,20 @@ Archiwum ma śledzone źródła, lockfile, instrukcje i skrypt, bez .git, danych
 node_modules czy sekretów. Sprawdź sumę, rozpakuj do wybranego katalogu, zapewnij
 wymagania i prywatny bootstrap, podaj APP_VERSION odpowiadający commitowi i uruchom
 instalator jako root. Wyniki: [quality/raz-15.md](../quality/raz-15.md).
+
+Izolowane testy kontraktu ze źródeł `git archive` (bez wdrożenia na serwerze):
+
+```sh
+# Współdzielony daemon: wybór wolnej jawnej /28, bez zmian cudzych sieci.
+python3 scripts/test-installation.py HEAD
+# Osobny Docker 29.1.3 z wolnymi pulami: brak RAZEM_NETWORK_SUBNET.
+python3 scripts/test-installation.py --isolated-daemon HEAD
+```
+
+Druga próba wymaga uruchomienia własnego uprzywilejowanego kontenera Docker-in-Docker.
+Daemon słucha wyłącznie na wewnętrznym Unix sockecie, nie publikuje portów na hoście,
+nie montuje hostowego Docker socketa. Fresh, repeat i restart sprawdzają rzeczywistą
+sieć i zachowanie danych; oba warianty usuwają swoje zasoby w `finally`.
 
 RAZ-16 odpowiada za rzeczywisty Ubuntu/HTTPS i oba fizyczne iPhone'y. Na każdym:
 Safari → właściwy zaufany HTTPS origin → zalogowanie i wymuszona zmiana hasła →

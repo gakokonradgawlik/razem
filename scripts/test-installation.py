@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """RAZ-15: real Docker test of archived sources. Removes only its unique resources.
 Run from the repository: python3 scripts/test-installation.py [commit]
+Add --isolated-daemon to test automatic IPAM on a fresh privileged Docker-in-Docker
+daemon (Unix socket only, no published ports); otherwise use a free explicit subnet.
 Needs Linux, Git, Docker access and network for image builds. No production install.
 """
+import argparse
 import io
 import json
 import os
@@ -82,12 +85,16 @@ def inside(project, commit):
     network_ids = command(['docker', 'network', 'ls', '-q']).stdout.split()
     allocated = [ipaddress.ip_network(c['Subnet']) for n in json.loads(command(['docker', 'network', 'inspect', *network_ids]).stdout)
                  for c in (n['IPAM']['Config'] or []) if c.get('Subnet')]
-    subnet = next(str(n) for n in ipaddress.ip_network('10.249.0.0/16').subnets(new_prefix=28)
-                  if not any(n.overlaps(a) for a in allocated if a.version == 4))
+    automatic = os.environ.get('RAZ15_AUTOMATIC_SUBNET') == '1'
+    subnet = '' if automatic else next(str(n) for n in ipaddress.ip_network('10.249.0.0/16').subnets(new_prefix=28)
+                                       if not any(n.overlaps(a) for a in allocated if a.version == 4))
     version = commit[:7]
     env = dict(os.environ, APP_VERSION=version, INSTALL_USER='synthetic-owner', INSTALL_UID='1000',
                INSTALL_GID='1000', INSTALL_HOME='/home/synthetic-owner', RAZEM_PROJECT_NAME=project,
-               HTTP_PORT=str(port), VAPID_SUBJECT='mailto:synthetic@example.test', RAZEM_NETWORK_SUBNET=subnet)
+               HTTP_PORT=str(port), VAPID_SUBJECT='mailto:synthetic@example.test')
+    env.pop('RAZEM_NETWORK_SUBNET', None)
+    if subnet:
+        env['RAZEM_NETWORK_SUBNET'] = subnet
     bootstrap = {'householdName': 'Synthetic only', 'timezone': 'Europe/Warsaw', 'members': [
         {'login': 'alpha@example.test', 'displayName': 'Synthetic A', 'temporaryPassword': 'Temporary-5qWe!0987'},
         {'login': 'beta@example.test', 'displayName': 'Synthetic B', 'temporaryPassword': 'Temporary-9zRt!5432'}]}
@@ -98,7 +105,7 @@ def inside(project, commit):
     (root / '.env').write_text('UNRELATED=keep-literal-$(not-executed)\n')
     (root / '.env').chmod(0o600)
     os.chown(root / '.env', 1000, 1000)
-    print(f'TEST {project}: HTTP {port}, TLS {tlsport}, subnet {subnet}', flush=True)
+    print(f'TEST {project}: HTTP {port}, TLS {tlsport}, subnet {subnet or "automatic (variable absent)"}', flush=True)
     checks = []
     images = set()
     extra_projects = []
@@ -121,11 +128,22 @@ def inside(project, commit):
     def state():
         return json.loads((root / '.razem/config.json').read_text())
 
-    def dc(*args, data=None, config=None, check=True):
-        cfg = config or state()
-        cenv = {'PATH': os.environ['PATH'], 'HOME': '/root', **cfg['env']}
-        return command(['docker', 'compose', '--project-name', cfg['project'], '--env-file', '/dev/null',
-                        '-f', str(root / 'deploy/compose.yaml'), *args], cwd=root, env=cenv, data=data, ok=check)
+    def dc(*args, data=None, check=True):
+        # Exercise the same persisted configuration/override path as operators.
+        return command(['sh', 'scripts/compose.sh', *args], cwd=root, data=data, ok=check)
+
+    def check_network():
+        merged = json.loads(dc('config', '--format', 'json').stdout)
+        ipam = merged['networks']['default'].get('ipam', {})
+        actual = json.loads(command(['docker', 'network', 'inspect', project + '_default']).stdout)[0]
+        if automatic:
+            assert not state()['env'].get('RAZEM_NETWORK_SUBNET')
+            assert not ipam.get('config'), 'automatic allocation must omit IPAM config'
+            assert actual['IPAM']['Config'][0]['Subnet'], 'Docker must allocate a real subnet'
+        else:
+            assert ipam['config'] == [{'subnet': subnet}]
+            assert actual['IPAM']['Config'][0]['Subnet'] == subnet
+        return actual['Id']
 
     def js(code, database=None):
         args = ['exec', '-T']
@@ -152,6 +170,7 @@ def inside(project, commit):
         assert all(m['temporaryPassword'] not in logs for m in bootstrap['members'])
         assert (root / '.env').stat().st_uid == 1000 and (root / '.env').stat().st_mode & 0o777 == 0o600
         assert command(['curl', '-fsS', f'http://127.0.0.1:{port}/']).stdout.startswith('<!doctype html>')
+        network_id = check_network()
         passed('fresh install: healthy app+worker, HTTP+UI, VAPID, INSTALL_*, version after success')
         js(SEED)
         baseline = snapshot()
@@ -164,10 +183,12 @@ def inside(project, commit):
         assert snapshot() == baseline and state()['env']['HTTP_PORT'] == str(port)
         assert state()['env']['VAPID_PRIVATE_KEY'] == cfg['env']['VAPID_PRIVATE_KEY']
         assert [u['password_hash'] for u in snapshot()['users']] == hashes
+        assert check_network() == network_id
         passed('repeat: data, password hashes, VAPID, queue and port preserved; migrations once')
         dc('restart', 'app', 'worker')
         dc('up', '-d', '--wait', '--wait-timeout', '90', 'app', 'worker')
         assert snapshot() == baseline
+        assert check_network() == network_id
         ids = dc('ps', '-q', 'app', 'worker').stdout.split()
         inspect = json.loads(command(['docker', 'inspect', *ids]).stdout)
         for item in inspect:
@@ -280,6 +301,7 @@ d.close();
                 'RAZEM_HTTPS_PORT': str(tlsport), 'RAZEM_CADDY_IMAGE': project + '-caddy:check'}
         images.add(cenv['RAZEM_CADDY_IMAGE'])
         cargs = ['docker', 'compose', '--project-name', project, '--env-file', '/dev/null', '-f', str(root / 'deploy/compose.yaml'),
+                 *(['-f', str(root / 'deploy/compose.subnet.yaml')] if subnet else []),
                  '-f', str(root / 'deploy/compose.caddy.yaml'), '--profile', 'caddy']
         caddy_result = command(cargs + ['up', '-d', '--build', '--wait', '--wait-timeout', '90'], cwd=root, env=cenv, ok=False)
         if caddy_result.returncode:
@@ -321,10 +343,12 @@ d.close();
         print('PASS cleanup: own containers/networks/volumes removed; ports free; temporary private files removed', flush=True)
 
 
-def outside(revision):
+def outside(revision, isolated=False):
     commit = command(['git', 'rev-parse', '--verify', revision + '^{commit}'], cwd=REPO).stdout.strip()
     project = 'raz15-' + uuid.uuid4().hex[:10]
     harness = project + '-harness:check'
+    daemon = project + '-daemon'
+    storage = project + '-daemon-data'
     with tempfile.TemporaryDirectory(prefix=project + '-') as temp:
         testdir = Path(temp)
         root = testdir / 'installation'
@@ -338,13 +362,47 @@ def outside(revision):
         try:
             print('Building isolated root/Linux/Docker CLI harness...', flush=True)
             command(['docker', 'build', '-f', str(testdir / 'Dockerfile.harness'), '-t', harness, str(testdir)])
-            result = subprocess.run(['docker', 'run', '--rm', '--network', 'host', '--entrypoint', 'python3',
-                                     '-e', 'RAZ15_HARNESS=' + harness, '-v', '/var/run/docker.sock:/var/run/docker.sock',
-                                     '-v', f'{testdir}:{testdir}', '-w', str(root), harness, str(testdir / 'suite.py'),
-                                     '--inside', project, commit])
+            if isolated:
+                print('Starting isolated Docker 29.1.3 daemon; automatic subnet, Unix socket only...', flush=True)
+                command(['docker', 'volume', 'create', storage])
+                command(['docker', 'run', '-d', '--name', daemon, '--privileged', '--network', 'bridge',
+                         '-v', f'{storage}:/var/lib/docker', '-v', f'{testdir}:{testdir}', harness,
+                         'dockerd', '--host=unix:///var/run/docker.sock', '--bip=10.253.0.1/24',
+                         '--default-address-pool=base=10.254.0.0/16,size=24'])
+                for _ in range(60):
+                    if command(['docker', 'exec', daemon, 'docker', 'info'], ok=False).returncode == 0:
+                        break
+                    time.sleep(1)
+                else:
+                    raise RuntimeError('isolated Docker daemon did not become ready')
+                # The proxy probe uses the harness image inside the independent daemon.
+                saved = subprocess.Popen(['docker', 'image', 'save', harness], stdout=subprocess.PIPE)
+                try:
+                    loaded = subprocess.run(['docker', 'exec', '-i', daemon, 'docker', 'image', 'load'],
+                                            stdin=saved.stdout, capture_output=True)
+                finally:
+                    saved.stdout.close()
+                    save_code = saved.wait()
+                assert save_code == 0 and loaded.returncode == 0, 'failed to load isolated proxy probe image'
+                result = subprocess.run(['docker', 'exec', '-w', str(root), '-e', 'RAZ15_HARNESS=' + harness,
+                                         '-e', 'RAZ15_AUTOMATIC_SUBNET=1', daemon, 'python3',
+                                         str(testdir / 'suite.py'), '--inside', project, commit])
+            else:
+                result = subprocess.run(['docker', 'run', '--rm', '--network', 'host', '--entrypoint', 'python3',
+                                         '-e', 'RAZ15_HARNESS=' + harness, '-v', '/var/run/docker.sock:/var/run/docker.sock',
+                                         '-v', f'{testdir}:{testdir}', '-w', str(root), harness, str(testdir / 'suite.py'),
+                                         '--inside', project, commit])
             if result.returncode:
                 raise RuntimeError('isolated installation suite failed (resources cleaned in finally)')
         finally:
+            if isolated:
+                # Named daemon and its private store only; never prune the shared daemon.
+                existing = command(['docker', 'ps', '-aq', '--filter', 'name=^/' + daemon + '$']).stdout.strip()
+                if existing:
+                    command(['docker', 'rm', '-fv', daemon])
+                if command(['docker', 'volume', 'ls', '-q', '--filter', 'name=^' + storage + '$']).stdout.strip():
+                    command(['docker', 'volume', 'rm', storage])
+                print('PASS isolated daemon cleanup: container and private Docker store removed; no host ports published', flush=True)
             # Backstop even when an assertion interrupts the suite's final checks.
             command(['docker', 'run', '--rm', '--entrypoint', 'node', '-v', f'{testdir}:/cleanup',
                      'node:26.13.0-bookworm-slim', '-e',
@@ -356,4 +414,8 @@ if __name__ == '__main__':
     if sys.argv[1:2] == ['--inside']:
         inside(sys.argv[2], sys.argv[3])
     else:
-        outside(sys.argv[1] if len(sys.argv) > 1 else 'HEAD')
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument('commit', nargs='?', default='HEAD')
+        parser.add_argument('--isolated-daemon', action='store_true')
+        args = parser.parse_args()
+        outside(args.commit, args.isolated_daemon)

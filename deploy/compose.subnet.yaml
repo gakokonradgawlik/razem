@@ -1,0 +1,6 @@
+# Include only when an explicit subnet is configured; the base uses Docker IPAM defaults.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${RAZEM_NETWORK_SUBNET:?Set an explicit free IPv4 subnet}

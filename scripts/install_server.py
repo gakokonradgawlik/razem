@@ -68,11 +68,18 @@ def base_env():
     return {'PATH': os.environ.get('PATH', '/usr/sbin:/usr/bin:/sbin:/bin'), 'HOME': '/root'}
 
 
+def compose_args(config):
+    args = ['docker', 'compose', '--project-name', config['project'], '--env-file', '/dev/null',
+            '-f', str(ROOT / 'deploy/compose.yaml')]
+    if config['env'].get('RAZEM_NETWORK_SUBNET'):
+        args += ['-f', str(ROOT / 'deploy/compose.subnet.yaml')]
+    return args
+
+
 def compose(config, *args, data=None):
     env = base_env()
     env.update(config['env'])
-    return run(['docker', 'compose', '--project-name', config['project'], '--env-file', '/dev/null',
-                '-f', str(ROOT / 'deploy/compose.yaml'), *args], env, data)
+    return run([*compose_args(config), *args], env, data)
 
 
 def containers(project):
@@ -272,8 +279,7 @@ if __name__ == '__main__':
             # Operators intentionally get normal Docker output. Never use config without --quiet in logs.
             env = base_env()
             env.update(config['env'])
-            os.execvpe('docker', ['docker', 'compose', '--project-name', config['project'], '--env-file', '/dev/null',
-                                 '-f', str(ROOT / 'deploy/compose.yaml'), *sys.argv[2:]], env)
+            os.execvpe('docker', [*compose_args(config), *sys.argv[2:]], env)
         else:
             install()
     except (RuntimeError, OSError, ValueError, KeyError):
