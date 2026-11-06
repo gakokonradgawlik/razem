@@ -211,8 +211,11 @@ def install():
         env = config['env']
         if env.get('VAPID_SUBJECT') and not env.get('VAPID_PUBLIC_KEY') and not env.get('VAPID_PRIVATE_KEY'):
             STEP = 'generowanie VAPID'
-            keys = json.loads(compose(config, 'run', '--rm', '--no-deps', '-T', 'app', 'node', '-e',
-                                     "console.log(JSON.stringify(require('web-push').generateVAPIDKeys()))"))
+            # Attached stdout is captured in memory; no Docker log ever stores the private key.
+            keys = json.loads(run(['docker', 'run', '--rm', '--log-driver', 'none', '--network', 'none',
+                                   '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
+                                   env['RAZEM_IMAGE'], 'node', '-e',
+                                   "console.log(JSON.stringify(require('web-push').generateVAPIDKeys()))"]))
             env.update(VAPID_PUBLIC_KEY=keys['publicKey'], VAPID_PRIVATE_KEY=keys['privateKey'])
         # Persist fresh secrets before any fallible migration/start; retries reuse them.
         if not old:

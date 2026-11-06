@@ -44,6 +44,8 @@ Puste VAPID wyłącza push, bez blokowania organizera. Klucze i cursor key SQLit
 powstają raz; nie ma losowania sekretów przy restarcie. Zmiana niepustej istniejącej
 konfiguracji VAPID przez instalator jest odrzucana. Rotacja wymaga oddzielnego,
 świadomego działania i ponownego opt-in telefonów. Nie zapisuj sekretów w Git/logach.
+Generator kluczy działa bez sieci, z wyłączonym Docker logging; wynik jest
+przechwytywany w pamięci i zapisywany wyłącznie do prywatnej konfiguracji.
 
 Pierwsza instalacja wymaga prywatnego JSON zgodnego z `BootstrapInput`:
 `householdName`, `timezone` (opcjonalne, domyślnie Europe/Warsaw), `members` —

@@ -75,6 +75,7 @@ def inside(project, commit):
     root = Path.cwd()
     testdir = root.parent
     port, tlsport = free_port(), free_port()
+    used_ports = [port, tlsport]
     # All Docker default pools can already be allocated by unrelated projects.
     # Choose a free explicit /28; never remove or reconfigure any existing network.
     import ipaddress
@@ -112,6 +113,9 @@ def inside(project, commit):
         assert (result.returncode == 0) == success, result.stdout + result.stderr
         for member in bootstrap['members']:
             assert member['temporaryPassword'] not in result.stdout + result.stderr
+        if (root / '.razem/config.json').exists():
+            key = state()['env'].get('VAPID_PRIVATE_KEY')
+            assert not key or key not in result.stdout + result.stderr
         return result
 
     def state():
@@ -143,6 +147,9 @@ def inside(project, commit):
         assert (root / '.env').read_text() == f'UNRELATED=keep-literal-$(not-executed)\nAPP_VERSION={version}\n'
         assert cfg['env']['RAZEM_BIND_ADDRESS'] == '127.0.0.1'
         assert cfg['env']['VAPID_PUBLIC_KEY'] and cfg['env']['VAPID_PRIVATE_KEY']
+        logs = dc('logs', '--no-color', 'app', 'worker').stdout
+        assert cfg['env']['VAPID_PRIVATE_KEY'] not in logs
+        assert all(m['temporaryPassword'] not in logs for m in bootstrap['members'])
         assert (root / '.env').stat().st_uid == 1000 and (root / '.env').stat().st_mode & 0o777 == 0o600
         assert command(['curl', '-fsS', f'http://127.0.0.1:{port}/']).stdout.startswith('<!doctype html>')
         passed('fresh install: healthy app+worker, HTTP+UI, VAPID, INSTALL_*, version after success')
@@ -175,6 +182,7 @@ def inside(project, commit):
             occupied.bind(('127.0.0.1', 0))
             occupied.listen()
             badport = occupied.getsockname()[1]
+            used_ports.append(badport)
             result = install({'HTTP_PORT': str(badport), 'APP_VERSION': 'should-not-publish'}, success=False)
             assert 'zajęty' in result.stderr
             assert (root / '.env').read_bytes() == before + f'APP_VERSION={version}\n'.encode()
@@ -222,6 +230,7 @@ def inside(project, commit):
         assert recovered['queue'] == []  # FK cascade after subscription revocation
         # Run the retained old image against the restored directory on an isolated port.
         recovery_port = free_port()
+        used_ports.append(recovery_port)
         name = project + '-recovery'
         volume = project + '_data'
         command(['docker', 'run', '-d', '--name', name, '--user', '1000:1000', '--read-only', '--tmpfs', '/tmp',
@@ -278,7 +287,7 @@ d.close();
         cert.write_text(crt)
         command(['curl', '-fsS', '--noproxy', '*', '--cacert', str(cert), '--resolve', f'razem.test:{tlsport}:127.0.0.1', f'https://razem.test:{tlsport}/readyz'])
         passed('optional Caddy: non-root local CA, trusted TLS and proxied readiness')
-        print(json.dumps({'commit': commit, 'checks': checks, 'ports': [port, tlsport], 'cleanup': 'see final cleanup assertion'}), flush=True)
+        print(json.dumps({'commit': commit, 'checks': checks, 'ports': used_ports, 'cleanup': 'see final cleanup assertion'}), flush=True)
     finally:
         # Exact unique project labels only. Also catches containers from failed compose run/build.
         for p in [project, *extra_projects]:
@@ -300,7 +309,7 @@ d.close();
                 shutil.rmtree(path)
             elif path.exists():
                 path.unlink()
-        for portnumber in [port, tlsport]:
+        for portnumber in used_ports:
             with socket.socket() as sock:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 sock.bind(('127.0.0.1', portnumber))
