@@ -221,3 +221,6 @@ Sprawdź private/shared, konflikt, wylogowanie oraz aktualizację PWA bez utraty
 outbox; przed zamknięciem zapisz formularze. Włącz push świadomym przyciskiem i
 sprawdź przypomnienie zamkniętej PWA po HTTPS. WebKit ani symulacja transportu
 nie zastępują tego odbioru. Nie obiecujemy alarmów offline ani sync zamkniętej PWA.
+
+Wyniki każdego telefonu zapisuj w [checkliście RAZ-16](iphone-acceptance.md).
+Gotowy formularz nie oznacza zaliczenia testów ani wdrożenia.
