@@ -74,7 +74,8 @@ class ConfigurationTests(unittest.TestCase):
                     installer.configuration(None)
 
     def test_bootstrap_private_file_and_invalid_json(self):
-        path = self.root / 'bootstrap.json'
+        (self.root / '.razem').mkdir(mode=0o700)
+        path = self.root / '.razem' / 'bootstrap.json'
         path.write_text(json.dumps({'synthetic': 'secret'}))
         path.chmod(0o600)
         with patch.dict(os.environ, {'RAZEM_BOOTSTRAP_FILE': str(path)}):
@@ -84,6 +85,14 @@ class ConfigurationTests(unittest.TestCase):
                 installer.bootstrap_data()
         os.environ['RAZEM_BOOTSTRAP_JSON'] = 'broken synthetic secret'
         with self.assertRaisesRegex(RuntimeError, '^niepoprawny JSON bootstrapu$'):
+            installer.bootstrap_data()
+
+    def test_bootstrap_cannot_enter_docker_build_context(self):
+        path = self.root / 'bootstrap.json'
+        path.write_text('{}')
+        path.chmod(0o600)
+        os.environ['RAZEM_BOOTSTRAP_FILE'] = str(path)
+        with self.assertRaisesRegex(RuntimeError, 'poza źródłami'):
             installer.bootstrap_data()
 
 

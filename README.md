@@ -68,8 +68,10 @@ Zmienna `DATABASE_PATH` może wskazywać osobną bazę testową. Nie używaj NFS
 ## Konta (lokalne CLI administratora)
 
 Nie ma rejestracji, konta demo ani hasła domyślnego. Jedno gospodarstwo i dokładnie
-dwa konta tworzy administrator na serwerze; hasła podaje się przez stdin (ukryte na
-terminalu, potwierdzane), nigdy w argumentach/zmiennych. CLI ich nie wypisuje.
+dwa konta tworzy administrator na serwerze; CLI czyta hasła przez stdin (ukryte na
+terminalu, potwierdzane), nigdy z argumentów. CLI ich nie wypisuje. Instalator ToDo
+przekazuje prywatny bootstrap z chronionego pliku/ustawienia do stdin kontenera;
+szczegóły i wymagane uprawnienia: [operations/ubuntu.md](operations/ubuntu.md).
 
 ```sh
 npm run build

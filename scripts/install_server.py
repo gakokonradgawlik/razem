@@ -162,6 +162,9 @@ def bootstrap_data():
         require(not raw, 'podaj jeden sposób dostarczenia bootstrapu')
         path = Path(os.environ['RAZEM_BOOTSTRAP_FILE'])
         private(path)
+        resolved = path.resolve()
+        require(ROOT not in resolved.parents or STATE in resolved.parents,
+                'plik bootstrapu musi być poza źródłami albo w wykluczonym .razem/ (ochrona kontekstu build)')
         require(path.stat().st_size <= 16384, 'bootstrap jest zbyt duży')
         raw = path.read_text()
     require(len(raw) <= 16384, 'bootstrap jest zbyt duży')
@@ -196,6 +199,12 @@ def install():
         except BlockingIOError:
             raise RuntimeError('inna instalacja Razem już trwa') from None
         require(load_config() == old, 'konfiguracja zmieniła się podczas preflight; ponów instalację')
+        retained = None
+        if old and old.get('image_id'):
+            STEP = 'zachowanie poprzedniego obrazu przed buildem'
+            retained = f"razem-{config['project']}:retained-{old['image_id'].removeprefix('sha256:')[:24]}"
+            # Rebuilding the same version can untag its old manifest index; retain it FIRST.
+            run(['docker', 'image', 'tag', old['image_id'], retained])
         STEP = 'build obrazu'
         print('Razem: preflight OK; budowanie obrazu', flush=True)
         compose(config, 'build', 'app')
@@ -212,13 +221,8 @@ def install():
         compose(old or config, 'stop', 'worker', 'app')
         if old and old.get('image_id'):
             STEP = 'backup przed aktualizacją (stary obraz, bez migracji)'
-            old_image = old.get('image_id')
             backup_config = json.loads(json.dumps(old))
-            if old_image:
-                # Compose v5 interprets a bare sha256 ID as repository:tag and may rebuild it.
-                # Give the immutable image an explicit local tag; never pull/build during backup.
-                retained = f"razem-{config['project']}:retained-{old_image.removeprefix('sha256:')[:24]}"
-                run(['docker', 'image', 'tag', old_image, retained])
+            if retained:
                 backup_config['env']['RAZEM_IMAGE'] = retained
             volume = json.loads(compose(backup_config, 'config', '--format', 'json'))['volumes']['data']['name']
             # A dedicated Docker run has no build definition and no network access.

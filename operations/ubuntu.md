@@ -50,7 +50,9 @@ Pierwsza instalacja wymaga prywatnego JSON zgodnego z `BootstrapInput`:
 dokładnie dwa obiekty `login`, `displayName`, `temporaryPassword`. Każde hasło musi
 spełniać politykę `security/access.md`. Przekaż go jako **prywatną zmienną**
 RAZEM_BOOTSTRAP_JSON w Installation albo przygotuj prywatny plik i wskaż jego
-ścieżkę RAZEM_BOOTSTRAP_FILE. Bez hasła domyślnego/demo i bez haseł w argv.
+ścieżkę RAZEM_BOOTSTRAP_FILE. Plik musi leżeć poza źródłami albo w wykluczonym
+z builda `.razem/`; instalator odmawia pliku mogącego trafić do kontekstu Docker.
+Bez hasła domyślnego/demo i bez haseł w argv.
 Instalator przesyła JSON do kontenera przez stdin; CLI niczego z niego nie loguje.
 Istniejące dwa konta pozostają bez zmian. Po udanym bootstrapie usuń wejściowy
 plik/prywatne ustawienie ToDo i przekaż tymczasowe hasła osobiście; pierwsze
