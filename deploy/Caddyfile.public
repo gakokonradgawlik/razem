@@ -1,0 +1,8 @@
+# Already-authorized public domain/routing required. No router/firewall configuration.
+{
+    https_port 8443
+    auto_https disable_redirects
+}
+{$RAZEM_SITE_ADDRESS}:8443 {
+    reverse_proxy app:3100
+}

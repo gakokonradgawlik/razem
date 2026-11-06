@@ -150,10 +150,12 @@ Wysyła je po konfiguracji VAPID i świadomym opt-in na urządzeniu; patrz
 [architecture/push.md](architecture/push.md).
 
 `deploy/compose.yaml` definiuje app + worker i lokalny wolumen SQLite; host port
-jest ograniczony do loopback, domyślnie 3100 (`RAZEM_PORT`). Obraz bazowy ma dokładną
+jest ograniczony do loopback, domyślnie 3000 (`HTTP_PORT`, starszy `RAZEM_PORT` nadal obsługiwany). Obraz bazowy ma dokładną
 wersję i digest, procesy działają jako `node`, bez dodatkowych capabilities.
-Build: `docker compose -f deploy/compose.yaml build app`. Ten etap projektu nie
-wdraża aplikacji. HTTPS/proxy i uruchomienie na serwerze należą do zadań operacyjnych.
+Build: `docker compose -f deploy/compose.yaml build app`.
+Pakiet Ubuntu i bezinteraktywny instalator ToDo (`sh scripts/install_server.sh` jako root),
+opcjonalny Caddy, bootstrap, przenośne wydanie i procedury aktualizacji/odtworzenia:
+[operations/ubuntu.md](operations/ubuntu.md). Rzeczywiste wdrożenie należy do RAZ-16.
 Nie uruchamiaj `down -v` na instalacji z danymi. Nie używamy Vite preview w produkcji.
 
 ## Struktura i dokumentacja

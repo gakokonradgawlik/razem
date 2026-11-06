@@ -11,3 +11,9 @@ data
 *.sqlite*
 test-results
 playwright-report
+.razem
+artifacts
+quality
+*.tar.gz
+*.bak
+*.log

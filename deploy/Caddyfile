@@ -1,0 +1,10 @@
+# Local CA template. Set a real hostname (without scheme/port) before starting.
+{
+    https_port 8443
+    auto_https disable_redirects
+    skip_install_trust
+}
+{$RAZEM_SITE_ADDRESS}:8443 {
+    tls internal
+    reverse_proxy app:3100
+}

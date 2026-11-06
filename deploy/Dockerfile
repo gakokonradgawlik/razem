@@ -25,6 +25,7 @@ COPY --from=build --chown=node:node /app/packages/contracts/dist ./packages/cont
 COPY --from=build --chown=node:node /app/packages/contracts/package.json ./packages/contracts/package.json
 COPY --from=build --chown=node:node /app/packages/db/dist ./packages/db/dist
 COPY --from=build --chown=node:node /app/packages/db/package.json ./packages/db/package.json
+COPY --chown=node:node deploy/bootstrap.mjs ./deploy/bootstrap.mjs
 RUN mkdir /data && chown node:node /data && chmod 700 /data
 USER node
 EXPOSE 3100
