@@ -29,6 +29,9 @@ Włącz push świadomym kliknięciem i sprawdź prawdziwe przypomnienie przy zam
 Sprawdź wylogowanie, brak danych poprzedniego konta i aktualizację PWA bez utraty oczekujących zmian.
 Jeżeli agent nie ma fizycznych telefonów, przekaż tę listę jako jedną owner action po gotowym wdrożeniu.
 
+Szczegółowa procedura z osobnymi wynikami A/B i metryką rzeczywistej instalacji:
+[odbiór RAZ-16](../operations/iphone-acceptance.md).
+
 ## Bramka wydania
 Sprawdzenie typów, build, testy domeny/sync/ACL oraz e2e Chromium+WebKit; bez błędów krytycznych; pakiet Docker z działającym health; realne HTTPS; odtworzony backup; fizyczne testy PWA/push z udokumentowanym wynikiem.
 Wynik rozdziela: zaimplementowane, automatycznie zweryfikowane, faktycznie wdrożone, fizycznie sprawdzone. Dokumentacja planu nie spełnia kryterium działania aplikacji.
