@@ -281,7 +281,12 @@ d.close();
         images.add(cenv['RAZEM_CADDY_IMAGE'])
         cargs = ['docker', 'compose', '--project-name', project, '--env-file', '/dev/null', '-f', str(root / 'deploy/compose.yaml'),
                  '-f', str(root / 'deploy/compose.caddy.yaml'), '--profile', 'caddy']
-        command(cargs + ['up', '-d', '--build', '--wait', '--wait-timeout', '90'], cwd=root, env=cenv)
+        caddy_result = command(cargs + ['up', '-d', '--build', '--wait', '--wait-timeout', '90'], cwd=root, env=cenv, ok=False)
+        if caddy_result.returncode:
+            print(command(cargs + ['logs', '--tail', '30', 'caddy'], cwd=root, env=cenv).stdout, flush=True)
+            cid = command(cargs + ['ps', '-aq', 'caddy'], cwd=root, env=cenv).stdout.strip()
+            print(command(['docker', 'inspect', cid, '--format', '{{json .State.Health}}']).stdout, flush=True)
+        assert caddy_result.returncode == 0, 'Caddy not healthy'
         crt = command(cargs + ['exec', '-T', 'caddy', 'cat', '/data/caddy/pki/authorities/local/root.crt'], cwd=root, env=cenv).stdout
         cert = testdir / 'root.crt'
         cert.write_text(crt)
