@@ -17,7 +17,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parent.parent
 STATE = ROOT / '.razem'
 STEP = 'preflight'
-KEYS = ('RAZEM_PUBLIC_ORIGIN', 'RAZEM_TRUST_PROXY', 'VAPID_SUBJECT', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY')
+KEYS = ('RAZEM_PUBLIC_ORIGIN', 'RAZEM_TRUST_PROXY', 'VAPID_SUBJECT', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'RAZEM_NETWORK_SUBNET')
 
 
 def require(ok, message):
@@ -50,7 +50,16 @@ def atomic(path, content, uid=0, gid=0):
 def run(args, env=None, data=None):
     result = subprocess.run(args, cwd=ROOT, env=env if env is not None else base_env(), input=data, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True)
-    require(result.returncode == 0, f'{STEP}: polecenie {args[0]} nie powiodło się (kod {result.returncode}); sprawdź Docker, konfigurację i stan usług')
+    diagnostics = {
+        'all predefined address pools have been fully subnetted': 'Docker nie ma wolnej podsieci; wybierz wolny RAZEM_NETWORK_SUBNET',
+        'port is already allocated': 'Docker zgłasza zajęty port hosta',
+        'no space left on device': 'brak miejsca w magazynie Docker/danych',
+        'permission denied': 'odmowa dostępu do Docker/pliku/wolumenu',
+        'unhealthy': 'kontener unhealthy; sprawdź prywatnie logs app/worker i konfigurację',
+    }
+    diagnosis = next((value for key, value in diagnostics.items() if key in (result.stdout + result.stderr).lower()),
+                     'sprawdź Docker, konfigurację i stan usług')
+    require(result.returncode == 0, f'{STEP}: polecenie {args[0]} nie powiodło się (kod {result.returncode}); {diagnosis}')
     return result.stdout
 
 
@@ -110,6 +119,10 @@ def configuration(old):
     version = os.environ.get('APP_VERSION', '')
     require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,80}', version), 'wymagany poprawny APP_VERSION (SHA albo wersja pakietu)')
     env.update(HTTP_PORT=port, RAZEM_BIND_ADDRESS=bind, RAZEM_IMAGE=f'razem-{project}:{version}')
+    if env.get('RAZEM_NETWORK_SUBNET'):
+        require(ipaddress.ip_network(env['RAZEM_NETWORK_SUBNET']).version == 4, 'podsieć Docker musi być IPv4')
+    require(not old or env.get('RAZEM_NETWORK_SUBNET', '') == old['env'].get('RAZEM_NETWORK_SUBNET', ''),
+            'zmiana podsieci istniejącej instalacji wymaga osobnej operacji')
     require(all('\n' not in value and '\r' not in value for value in env.values()), 'konfiguracja musi być jednoliniowa')
     config = {'project': project, 'env': env, 'version': version}
     return config

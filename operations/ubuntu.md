@@ -32,6 +32,7 @@ instalator odmawia symlinków i nie wykonuje jego zawartości jako kodu.
 | APP_VERSION | Wymagany SHA/wydanie; zapis do `.env` dopiero po gotowości usług i HTTP |
 | HTTP_PORT | Ma pierwszeństwo; bez niego zachowany port z `.razem/config.json`, następnie `.env` HTTP_PORT/RAZEM_PORT, ostatecznie **3000** |
 | RAZEM_PROJECT_NAME | Domyślnie `razem`; ustaw przed pierwszą instalacją dla osobnej instancji, później nie zmieniaj |
+| RAZEM_NETWORK_SUBNET | Opcjonalna wolna podsieć IPv4, gdy pule Dockera są zajęte; puste = automatyczny przydział; nie zmieniaj po instalacji |
 | RAZEM_BIND_ADDRESS | Domyślnie **127.0.0.1**; dla kontenerowego Caddy jawny konkretny IPv4 hosta osiągalny z jego sieci; `0.0.0.0` odrzucane |
 | RAZEM_PUBLIC_ORIGIN | Rzeczywisty dokładny HTTPS origin PWA; dla aliasu ToDo zgodny z aliasem z Installation |
 | RAZEM_TRUST_PROXY | Tylko faktyczny adres/CIDR zaufanego proxy, jeżeli potrzebne; puste domyślnie |

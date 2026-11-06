@@ -72,3 +72,9 @@ services:
       options: { max-size: 10m, max-file: '3' }
 volumes:
   data:
+networks:
+  default:
+    ipam:
+      config:
+        # Empty keeps Docker's default allocation; explicit subnet is useful on busy hosts.
+        - subnet: ${RAZEM_NETWORK_SUBNET:-}
