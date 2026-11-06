@@ -366,7 +366,8 @@ def outside(revision, isolated=False):
                 print('Starting isolated Docker 29.1.3 daemon; automatic subnet, Unix socket only...', flush=True)
                 command(['docker', 'volume', 'create', storage])
                 command(['docker', 'run', '-d', '--name', daemon, '--privileged', '--network', 'bridge',
-                         '-v', f'{storage}:/var/lib/docker', '-v', f'{testdir}:{testdir}', harness,
+                         # dind mounts a fresh /tmp; keep test sources outside it.
+                         '-v', f'{storage}:/var/lib/docker', '-v', f'{testdir}:/work', harness,
                          'dockerd', '--host=unix:///var/run/docker.sock', '--bip=10.253.0.1/24',
                          '--default-address-pool=base=10.254.0.0/16,size=24'])
                 for _ in range(60):
@@ -384,9 +385,9 @@ def outside(revision, isolated=False):
                     saved.stdout.close()
                     save_code = saved.wait()
                 assert save_code == 0 and loaded.returncode == 0, 'failed to load isolated proxy probe image'
-                result = subprocess.run(['docker', 'exec', '-w', str(root), '-e', 'RAZ15_HARNESS=' + harness,
+                result = subprocess.run(['docker', 'exec', '-w', '/work/installation', '-e', 'RAZ15_HARNESS=' + harness,
                                          '-e', 'RAZ15_AUTOMATIC_SUBNET=1', daemon, 'python3',
-                                         str(testdir / 'suite.py'), '--inside', project, commit])
+                                         '/work/suite.py', '--inside', project, commit])
             else:
                 result = subprocess.run(['docker', 'run', '--rm', '--network', 'host', '--entrypoint', 'python3',
                                          '-e', 'RAZ15_HARNESS=' + harness, '-v', '/var/run/docker.sock:/var/run/docker.sock',
