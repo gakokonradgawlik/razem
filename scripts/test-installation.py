@@ -80,7 +80,7 @@ def inside(project, commit):
     import ipaddress
     network_ids = command(['docker', 'network', 'ls', '-q']).stdout.split()
     allocated = [ipaddress.ip_network(c['Subnet']) for n in json.loads(command(['docker', 'network', 'inspect', *network_ids]).stdout)
-                 for c in n['IPAM']['Config'] if c.get('Subnet')]
+                 for c in (n['IPAM']['Config'] or []) if c.get('Subnet')]
     subnet = next(str(n) for n in ipaddress.ip_network('10.249.0.0/16').subnets(new_prefix=28)
                   if not any(n.overlaps(a) for a in allocated if a.version == 4))
     version = commit[:7]
@@ -96,6 +96,8 @@ def inside(project, commit):
     env['RAZEM_BOOTSTRAP_FILE'] = str(bootstrap_file)
     (root / '.env').write_text('UNRELATED=keep-literal-$(not-executed)\n')
     (root / '.env').chmod(0o600)
+    os.chown(root / '.env', 1000, 1000)
+    print(f'TEST {project}: HTTP {port}, TLS {tlsport}, subnet {subnet}', flush=True)
     checks = []
     images = set()
     extra_projects = []
@@ -235,6 +237,35 @@ def inside(project, commit):
         finally:
             command(['docker', 'rm', '-f', name])
         passed('verified restore + old-image rollback HTTP: ACL/data preserved, sessions/push revoked')
+        # Real schema upgrade v3 -> v6 plus snapshot restore, with synthetic private/shared data.
+        js("""
+import {openDatabase,migrate,migrations} from '@razem/db';
+const d=openDatabase('/data/legacy/razem.sqlite'); migrate(d.sqlite,{list:migrations.slice(0,3)});
+d.sqlite.exec("ATTACH DATABASE '/data/razem.sqlite' AS current; INSERT INTO households SELECT * FROM current.households; INSERT INTO users SELECT * FROM current.users; INSERT INTO notes SELECT * FROM current.notes; DETACH DATABASE current;");
+d.close();
+""")
+        def legacy_admin(*args, success=True):
+            result = dc('run', '--rm', '--no-deps', '-T', '-e', 'DATABASE_PATH=/data/legacy/razem.sqlite',
+                        'app', 'node', 'apps/server/dist/admin.js', *args, check=False)
+            assert (result.returncode == 0) == success
+            return result.stdout
+        assert '4, 5, 6' in legacy_admin('migrate')
+        legacy = json.loads(js(CHECK, '/data/legacy/razem.sqlite'))
+        assert legacy['notes'] == baseline['notes'] and len(legacy['migrations']) == 6
+        assert 'Schemat aktualny' in legacy_admin('migrate')
+        assert json.loads(js(CHECK, '/data/legacy/razem.sqlite')) == legacy
+        snapshot_path = js("import{readdirSync}from'node:fs';const a=readdirSync('/data/legacy').filter(n=>n.includes('.pre-migration-v3-'));if(a.length!==1)throw Error('snapshot count');console.log('/data/legacy/'+a[0])").strip()
+        dc('exec', '-T', 'app', 'node', 'apps/server/dist/admin.js', 'restore', '--snapshot', snapshot_path,
+           '--target', '/data/legacy-rollback')
+        info = json.loads(js("import{readFileSync}from'node:fs';console.log(readFileSync('/data/legacy-rollback/restore.json','utf8'))"))
+        assert info['schemaVersion'] == 3
+        js("import{openDatabase}from'@razem/db';const d=openDatabase(process.env.DATABASE_PATH);d.sqlite.prepare(\"UPDATE schema_migrations SET checksum='controlled-corruption' WHERE version=6\").run();d.close()", '/data/legacy/razem.sqlite')
+        legacy_admin('migrate', success=False)
+        # Repair only the deliberately corrupted test ledger from the untouched baseline.
+        checksum = baseline['migrations'][-1]['checksum']
+        js(f"import{{openDatabase}}from'@razem/db';const d=openDatabase(process.env.DATABASE_PATH);d.sqlite.prepare('UPDATE schema_migrations SET checksum=? WHERE version=6').run({json.dumps(checksum)});d.close()", '/data/legacy/razem.sqlite')
+        legacy_admin('migrate')
+        passed('schema v3->v6: snapshot before migration, idempotent repeat, v3 restore, corrupt checksum refused and repaired')
         # Optional non-root Caddy, real local CA and TLS verification (no -k).
         cenv = {'PATH': os.environ['PATH'], 'HOME': '/root', **state()['env'], 'RAZEM_SITE_ADDRESS': 'razem.test',
                 'RAZEM_HTTPS_PORT': str(tlsport), 'RAZEM_CADDY_IMAGE': project + '-caddy:check'}
@@ -264,14 +295,15 @@ def inside(project, commit):
         images.update(command(['docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}}', '--filter', f'reference=razem-{project}:*']).stdout.split())
         for image in images:
             command(['docker', 'image', 'rm', image], ok=False)
-        for portnumber in [port, tlsport]:
-            with socket.socket() as sock:
-                sock.bind(('127.0.0.1', portnumber))
         for path in [root / '.razem', testdir / 'bootstrap.json', testdir / 'root.crt']:
             if path.is_dir():
                 shutil.rmtree(path)
             elif path.exists():
                 path.unlink()
+        for portnumber in [port, tlsport]:
+            with socket.socket() as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind(('127.0.0.1', portnumber))
         print('PASS cleanup: own containers/networks/volumes removed; ports free; temporary private files removed', flush=True)
 
 
@@ -299,6 +331,10 @@ def outside(revision):
             if result.returncode:
                 raise RuntimeError('isolated installation suite failed (resources cleaned in finally)')
         finally:
+            # Backstop even when an assertion interrupts the suite's final checks.
+            command(['docker', 'run', '--rm', '--entrypoint', 'node', '-v', f'{testdir}:/cleanup',
+                     'node:26.13.0-bookworm-slim', '-e',
+                     "require('node:fs').rmSync('/cleanup/installation/.razem',{recursive:true,force:true})"], ok=False)
             command(['docker', 'image', 'rm', harness], ok=False)
 
 

@@ -215,8 +215,12 @@ def install():
             old_image = old.get('image_id')
             backup_config = json.loads(json.dumps(old))
             if old_image:
-                backup_config['env']['RAZEM_IMAGE'] = old_image
-            compose(backup_config, 'run', '--rm', '--no-deps', '-T', 'app', 'node',
+                # Compose v5 interprets a bare sha256 ID as repository:tag and may rebuild it.
+                # Give the immutable image an explicit local tag; never pull/build during backup.
+                retained = f"razem-{config['project']}:retained-{old_image.removeprefix('sha256:')[:24]}"
+                run(['docker', 'image', 'tag', old_image, retained])
+                backup_config['env']['RAZEM_IMAGE'] = retained
+            compose(backup_config, 'run', '--rm', '--no-deps', '--no-build', '--pull', 'never', '-T', 'app', 'node',
                     'apps/server/dist/admin.js', 'backup', '--config-file', '/data/installation.env')
             atomic(STATE / 'previous.json', json.dumps(old))
         STEP = 'kontrolowane migracje'
