@@ -63,6 +63,11 @@ test('notatki offline: polski tekst/emoji, szukanie, prywatna i wspólna, jawna 
   const other = await browser.newContext({ baseURL: ORIGIN });
   try {
     let a = await context.newPage(); const b = await other.newPage(); await signIn(a); await signIn(b, true); await context.setOffline(true);
+    // Terminate the whole browser before the first write: the shell and account
+    // must open with the network already cut, not just survive an offline tab.
+    await context.close();
+    context = await playwright[browserName].launchPersistentContext(profile, { ...options, offline: true });
+    a = await context.newPage();
     const secret = `Prywatny żółw ${tag}`, secretBody = `Tajna łódź 🔐 ${tag}`, shared = `Domowe plany ${tag}`, source = `Do wspólnej kopii ${tag}`;
     const text = 'Zażółć gęślą jaźń 🧑‍🍳\n<img src=x onerror=alert(1)>\n<b>To zwykły tekst</b>';
     const privatePath = await create(a, secret, secretBody);

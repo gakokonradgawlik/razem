@@ -3,6 +3,10 @@
 ## Dowody
 Kryteria wymagają wyników testów, commitów/plików i opisanych kroków. Mock nie dowodzi prawdziwego push ani TLS na iPhone. Playwright WebKit nie zastępuje Safari/PWA fizycznego urządzenia. Brak fizycznego testu zapisuj jako niewykonany, nigdy PASS. Testy uruchamiaj proporcjonalnie do zmian; pełny przekrój przed wydaniem.
 
+Automatyczna weryfikacja RAZ-14, mapa wszystkich poniższych scenariuszy i granice
+środowiska: [raport QA](raz-14.md). Fizyczna bramka wydania pozostaje osobnym
+odbiorem po wdrożeniu w RAZ-16.
+
 ## Scenariusze automatyczne
 1. Dwa odizolowane konteksty A/B: logowanie, wspólne wpisy przepływają w obie strony; prywatny wpis A niedostępny B przez UI, guessed ID, sync pull/push, conflict, trash/restore, export, worker/push.
 2. Po pierwszym online pobraniu: tryb offline, cold start PWA, utworzenie i poprawienie każdego typu, odhaczenie zakupów/zadań, usunięcie i przywrócenie. Zamknij/restartuj; dane i outbox zachowane.

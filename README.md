@@ -236,3 +236,13 @@ oraz konfiguracja: [architecture/push.md](architecture/push.md). Dowody:
 Testy push używają dwóch dodatkowych izolowanych serwerów na 127.0.0.1:4324/4325
 z syntetyczną parą VAPID generowaną w pamięci. Systemowe API przeglądarki są w tych
 testach symulowane; HTTP/sesje/SQLite są rzeczywiste. Serwery i bazy znikają po teście.
+
+## Weryfikacja przekrojowa (RAZ-14)
+
+[Raport QA](quality/raz-14.md) mapuje automatyczne scenariusze odbioru na testy:
+zimny start offline wszystkich modułów, dwa konta, retry po utracie ACK, konflikty,
+retencję/full-resync, migracje PWA, prywatność, daty, worker oraz eksport/backup.
+Po retencji pełny snapshot zawiera również dostępne tombstones, dzięki czemu
+konflikty zachowują aktualny stan serwera i lokalną treść do jawnego odzyskania.
+Testy WebKit i symulowany transport push nie zastępują fizycznego odbioru iPhone
+po HTTPS w RAZ-16.

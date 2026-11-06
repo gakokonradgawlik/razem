@@ -78,6 +78,11 @@ test('kalendarz offline → restart procesu → sync partnera: rodzaje, rok, str
   const other = await browser.newContext({ baseURL: ORIGIN, viewport: { width: 390, height: 844 } });
   try {
     let a = await context.newPage(); const b = await other.newPage(); await signIn(a); await signIn(b, true); await context.setOffline(true);
+    // Terminate the whole browser before the first write: the shell and account
+    // must open with the network already cut, not just survive an offline tab.
+    await context.close();
+    context = await playwright[browserName].launchPersistentContext(profile, { ...options, offline: true });
+    a = await context.newPage();
     const name = `Wyjazd ${tag}`, timed = `Godzinowe ${tag}`, date = `Rocznica ${tag}`, secret = `Sekret ${tag}`;
     const path = await event(a, name, true); const timedPath = await event(a, timed, false);
     const datePath = await annual(a, date); const privatePath = await event(a, secret, true, true); const privateDatePath = await annual(a, `Tajna data ${tag}`, true);

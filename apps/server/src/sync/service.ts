@@ -189,7 +189,7 @@ export class SyncService {
   private snapshotPage(scope: AccountScope, watermark: number, readable: number, position: { type: number; id: string | null }, limit: number): PullResponse {
     const page = this.records.snapshotPage(scope, position, limit, this.config.pullPageBytes);
     const at = this.now().getTime();
-    const changes: ServerState[] = page.records.map((record) => ({ kind: 'record', record }));
+    const changes = page.changes;
     const base = { status: 'ok', protocolVersion: PROTOCOL_VERSION, mode: 'snapshot', watermark: this.watermark(scope.userId, readable), changes } as const;
     if (page.next) return { ...base, hasMore: true, nextCursor: this.encode({ v: 1, m: 's', u: scope.userId, at, w: watermark, r: readable, t: page.next.type, i: page.next.id }) };
     const pendingDelta = this.records.journalPage(scope, watermark, this.records.maxSequence(), 1).length > 0;

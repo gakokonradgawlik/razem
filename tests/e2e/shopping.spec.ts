@@ -72,6 +72,11 @@ test('zakupy offline → restart procesu → sync → partner; kosz, polskie ilo
     let a = await context.newPage(); const b = await partner.newPage();
     await signIn(a); await signIn(b, 'Tomek');
     await context.setOffline(true);
+    // Terminate the whole browser before the first write: the shell and account
+    // must open with the network already cut, not just survive an offline tab.
+    await context.close();
+    context = await playwright[browserName].launchPersistentContext(profile, { ...options, offline: true });
+    a = await context.newPage();
     const shared = await list(a, `Sobotnie zakupy ${tag}`);
     await a.getByRole('link', { name: 'Dodaj pozycję', exact: true }).click();
     await a.getByLabel('Nazwa', { exact: true }).fill('Żółty ser');

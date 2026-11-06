@@ -241,3 +241,29 @@ it('opcjonalne usunięcie produktu prowadzi do żywej listy, nadal z ACL rodzica
   repo.remove(A, { entityType: 'shopping_item', id: item.id, baseVersion: 1 }); await worker.tick();
   expect(send).toHaveBeenCalledTimes(1); expect(send.mock.calls[0]).toMatchObject([{ user_id: B.userId }, { url: `/powiadomienie/shopping_list/${list.id}` }]);
 });
+
+it('tytuły włączone u obu kont: prywatne zadanie/kalendarz/data i zakupy nie trafiają do payloadu partnera po restarcie', async () => {
+  const accounts = new AccountRepository(db);
+  for (const scope of [A, B]) accounts.updateSettings(accounts.userById(scope.userId)!, { includeTitles: true, shoppingNotifications: true, taskAssignments: true }, clock().toISOString());
+  const privateTask = create('task', { ...task, title: 'PRIVATE_TASK' });
+  const event = create('calendar_event', { title: 'PRIVATE_EVENT', description: 'Sekret', allDay: true, timezone: 'Europe/Warsaw', startDate: '2026-11-05', endDate: '2026-11-06', startAt: null, endAt: null });
+  const annual = create('important_date', { name: 'PRIVATE_DATE', month: 11, day: 5, startYear: null, kind: 'anniversary' });
+  for (const record of [event, annual]) create('reminder', { targetType: record.entityType, targetId: record.id, enabled: true, minutesBefore: 0, localTime: '09:00' });
+  const list = create('shopping_list', { name: 'PRIVATE_LIST' });
+  const item = create('shopping_item', { listId: list.id, name: 'PRIVATE_ITEM', quantity: '1', note: 'Sekret', checked: false, sortKey: 1 });
+  const shared = create('task', { ...task, title: 'SHARED_TASK', assignee: 'both' }, 'shared');
+  worker.plan();
+  db.close(); db = openDatabase(join(dir, 'db.sqlite')); open.push(db);
+  worker = new ReminderWorker(db, send, clock); due();
+  for (let n = 0; n < 10; n++) await worker.tick();
+  const callsA = send.mock.calls.filter(([subscription]) => subscription.user_id === A.userId);
+  const callsB = send.mock.calls.filter(([subscription]) => subscription.user_id === B.userId);
+  for (const record of [privateTask, event, annual]) {
+    expect(callsA.some(([, payload]) => payload.url.endsWith(record.id))).toBe(true);
+  }
+  // A real shared job is a positive control: B's transport was exercised, not empty.
+  expect(callsB.some(([, payload]) => payload.url.endsWith(shared.id))).toBe(true);
+  const partnerPayloads = JSON.stringify(callsB.map(([, payload]) => payload));
+  for (const secret of ['PRIVATE_', 'Sekret', ...[privateTask, event, annual, list, item].map((r) => r.id)]) expect(partnerPayloads).not.toContain(secret);
+  expect(db.sqlite.prepare('SELECT id FROM reminder_dispatches WHERE user_id=? AND target_id IN (?,?,?,?,?)').all(B.userId, privateTask.id, event.id, annual.id, list.id, item.id)).toEqual([]);
+});

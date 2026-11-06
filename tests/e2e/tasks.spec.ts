@@ -53,6 +53,11 @@ test('zadania offline: edycja, przypisanie, ukończenie/cofnięcie, filtry, rest
     let a = await context.newPage(); const b = await partner.newPage();
     await signIn(a); await signIn(b, true);
     await context.setOffline(true);
+    // Terminate the whole browser before the first write: the shell and account
+    // must open with the network already cut, not just survive an offline tab.
+    await context.close();
+    context = await playwright[browserName].launchPersistentContext(profile, { ...options, offline: true });
+    a = await context.newPage();
     const title = `Obowiązek ${tag}`, edited = `Zmieniony obowiązek ${tag}`, secret = `Prywatny obowiązek ${tag}`;
     const path = await create(a, title);
     await a.getByRole('link', { name: 'Edytuj', exact: true }).click();
